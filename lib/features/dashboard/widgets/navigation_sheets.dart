@@ -1069,10 +1069,10 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
 
                   const SizedBox(height: 12),
 
-                  // Option 2: Comfortable Path Card (Shaded)
+                  // Option 2: Shaded Path Card (Shaded)
                   _buildRouteCard(
                     type: RouteType.comfortableShaded,
-                    title: 'Comfortable Path',
+                    title: 'Shaded Path',
                     subtitle: 'Prefers shaded pathways',
                     distance: comfortableDist,
                     walkTime: comfortableTime,
@@ -1313,7 +1313,7 @@ class RouteDetailsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isShortest = selectedRouteType == RouteType.shortest;
-    final title = isShortest ? 'Shortest Route' : 'Comfortable Path';
+    final title = isShortest ? 'Shortest Route' : 'Shaded Path';
     final subtitle =
         isShortest ? 'Most Direct Path' : 'Prefers shaded pathways';
 
@@ -1553,32 +1553,41 @@ class RouteDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: onStartNavigation,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F5A28),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                if (origin.type == NavigationOriginType.currentLocation) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: onStartNavigation,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F5A28),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 2,
                         ),
-                        elevation: 2,
-                      ),
-                      child: Text(
-                        'Start',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                        child: Text(
+                          'Start',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
+            if (origin.type != NavigationOriginType.currentLocation) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Preview only. Choose My Current Location to start navigation.',
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
@@ -1631,7 +1640,7 @@ class RoutePreviewHud extends StatelessWidget {
     final isArrival = onNext == null;
     final routeTypeLabel = selectedRouteType == RouteType.shortest
         ? 'Shortest Route'
-        : 'Comfortable Path';
+        : 'Shaded Path';
     final routeSubtitle = selectedRouteType == RouteType.shortest
         ? 'Most Direct Path'
         : 'Prefers shaded pathways';

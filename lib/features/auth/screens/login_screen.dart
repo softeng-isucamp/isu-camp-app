@@ -85,6 +85,7 @@ Future<void> _handleLogin() async {
     // Remember logged-in user
     UserSession.setLoggedInUser(
       username: username,
+      token: response['access_token'] as String?,
     );
 
     if (!mounted) return;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
 import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
+import '../models/navigation_heading.dart';
 import '../services/campus_service.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/navigation_sheets.dart';
@@ -69,6 +71,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
   bool _isLoadingBuildings = true;
   String? _buildingsError;
   StreamSubscription<Position>? _positionSubscription;
+  double? _movementHeading;
   int _previewStepIndex = 0;
   String? _historySessionId;
   Future<void> _historyWriteQueue = Future<void>.value();
@@ -190,13 +193,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
       ),
       alignment: Alignment.center,
       child: isWalking
-          ? Container(
-              width: 12,
-              height: 12,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F751B),
-                shape: BoxShape.circle,
-              ),
+          ? Transform.rotate(
+              angle: ((_navigationState == NavigationUiState.navigating
+                          ? _movementHeading
+                          : null) ??
+                      routeHeading(_routePoints, _selectedOrigin.coordinate) ??
+                      0) *
+                  math.pi /
+                  180,
+              child: const Icon(Icons.navigation,
+                  color: Color(0xFF0F751B), size: 26),
             )
           : Icon(
               routeModeIcon(_selectedTransportMode),
@@ -304,7 +310,19 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   void _updateCurrentPosition(Position position) {
     if (!mounted) return;
+    final next = LatLng(position.latitude, position.longitude);
+    final previous = _currentUserLocation;
     setState(() {
+      if (position.speed.isFinite &&
+          position.speed > 0.5 &&
+          position.heading.isFinite &&
+          position.heading >= 0 &&
+          position.heading < 360) {
+        _movementHeading = position.heading;
+      } else if (previous != null && const Distance()(previous, next) >= 3) {
+        _movementHeading =
+            navigationBearing(previous, next) ?? _movementHeading;
+      }
       _currentUserLocation = LatLng(position.latitude, position.longitude);
       _locationStatus = isuEchagueBounds.contains(_currentUserLocation!)
           ? null
@@ -358,6 +376,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
       _navigationState = NavigationUiState.idle;
       _walkingRoute = null;
       _selectedRoom = null;
+      _historySessionId = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _mapController.move(isuCampusCenter, 16.8);
@@ -365,40 +384,37 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   void _recordHistory(NavigationHistoryStatus status) {
+    if (status != NavigationHistoryStatus.previewed &&
+        status != NavigationHistoryStatus.navigationStarted) return;
     final destination = _selectedBuilding;
     final route = _walkingRoute;
-    if (destination == null || route == null) return;
-
-    final now = DateTime.now();
+    if (destination == null || route == null || _historySessionId != null)
+      return;
+    final token = UserSession.accessToken;
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Please log in again to save your navigation history.')));
+      return;
+    }
     final sessionId =
-        _historySessionId ?? '${now.microsecondsSinceEpoch}_${destination.id}';
+        '${DateTime.now().microsecondsSinceEpoch}_${destination.id}';
     _historySessionId = sessionId;
-    final entry = NavigationHistoryEntry(
-      id: sessionId,
-      destinationId: destination.id,
-      destinationName: destination.name,
-      destinationAcronym: destination.acronym,
-      roomId: _selectedRoom?.id,
-      roomName: _selectedRoom?.title,
-      originLabel: _selectedOrigin.label,
-      routeType: _selectedRouteType,
-      transportMode: _selectedTransportMode,
-      distanceMeters: route.distanceMeters,
-      estimatedMinutes: route.estimatedMinutes,
-      status: status,
-      createdAt: now,
-      updatedAt: now,
-    );
-
+    final roomId = _selectedRoom?.id;
     _historyWriteQueue = _historyWriteQueue
-        .then((_) => NavigationHistoryService.upsert(
-              UserSession.currentUsername,
-              entry,
-            ))
-        .catchError((_) {});
+        .then((_) => NavigationHistoryService.record(
+            buildingId: destination.id, roomId: roomId, token: token))
+        .catchError((Object error) {
+      if (!mounted || UserSession.accessToken != token) return;
+      if (_historySessionId == sessionId) _historySessionId = null;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'History was not saved. ${error.toString().replaceFirst('Exception: ', '')}')));
+    });
   }
 
   void _startNavigation() {
+    if (_selectedOrigin.type != NavigationOriginType.currentLocation) return;
     FocusScope.of(context).unfocus();
     _recordHistory(NavigationHistoryStatus.navigationStarted);
     setState(() => _navigationState = NavigationUiState.navigating);
@@ -707,8 +723,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   MarkerLayer(
                     markers: [
                       Marker(
-                        point: _walkingRoute?.points.first ??
-                            _selectedOrigin.coordinate,
+                        point: _navigationState == NavigationUiState.navigating
+                            ? _currentUserLocation ?? _selectedOrigin.coordinate
+                            : _walkingRoute?.points.first ??
+                                _selectedOrigin.coordinate,
                         width: 42,
                         height: 42,
                         child: _buildTransportOriginMarker(),
@@ -733,12 +751,17 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               BoxShadow(color: Colors.black38, blurRadius: 8),
                             ],
                           ),
-                          child: Icon(
-                            routeInstructionIcon(
-                              _currentPreviewStep!.instruction,
+                          child: Transform.rotate(
+                            angle: (routeHeading(_routePoints,
+                                        _currentPreviewStep!.coordinate!) ??
+                                    0) *
+                                math.pi /
+                                180,
+                            child: const Icon(
+                              Icons.navigation,
+                              color: Colors.white,
+                              size: 24,
                             ),
-                            color: Colors.white,
-                            size: 24,
                           ),
                         ),
                       ),
@@ -1024,15 +1047,26 @@ class _MapViewScreenState extends State<MapViewScreen> {
                         Row(
                           children: [
                             GestureDetector(
-                              onTap: () {
+                              onTap: () async {
+                                await _historyWriteQueue;
+                                if (!context.mounted) return;
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => UserInfoScreen(
-                                      onNavigateToBuilding: (destination) {
+                                      onNavigateToHistory: (entry) {
+                                        final destination = isuCampusBuildings
+                                            .where((b) =>
+                                                b.id == entry.destinationId)
+                                            .firstOrNull;
+                                        if (destination == null) return;
                                         _selectBuildingAndShowDetails(
                                             destination);
                                         setState(() {
+                                          _selectedRoom = destination.rooms
+                                              .where(
+                                                  (r) => r.id == entry.roomId)
+                                              .firstOrNull;
                                           _hasSelectedOrigin = false;
                                           _navigationState = NavigationUiState
                                               .chooseStartingPoint;
@@ -1333,6 +1367,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 },
                 onDirectionsTap: () {
                   setState(() {
+                    _historySessionId = null;
                     _selectedRoom = null;
                     _hasSelectedOrigin = false;
                     _navigationState = NavigationUiState.chooseStartingPoint;
@@ -1340,6 +1375,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 },
                 onRoomDirectionsTap: (room) {
                   setState(() {
+                    _historySessionId = null;
                     _selectedRoom = room;
                     _walkingRoute = null;
                     _hasSelectedOrigin = false;
@@ -1380,6 +1416,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 onCancel: _cancelDirections,
                 onContinue: () {
                   setState(() {
+                    _historySessionId = null;
                     _walkingRoute = null;
                     _navigationState = NavigationUiState.chooseRoute;
                   });

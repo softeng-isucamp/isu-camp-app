@@ -6,7 +6,6 @@ import '../../auth/screens/help_screen.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
-import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
 import '../services/navigation_history_service.dart';
 import 'about_us_screen.dart';
@@ -15,11 +14,11 @@ import 'about_us_screen.dart';
 // 1. MAIN USER INFO SCREEN
 // =========================================================================
 class UserInfoScreen extends StatefulWidget {
-  final Function(CampusBuilding destination)? onNavigateToBuilding;
+  final ValueChanged<NavigationHistoryEntry>? onNavigateToHistory;
 
   const UserInfoScreen({
     super.key,
-    this.onNavigateToBuilding,
+    this.onNavigateToHistory,
   });
 
   @override
@@ -231,7 +230,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                             label: 'History',
                             onTap: () async {
                               final destination =
-                                  await Navigator.push<CampusBuilding>(
+                                  await Navigator.push<NavigationHistoryEntry>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => const _HistorySubScreen(),
@@ -241,7 +240,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                                 return;
                               }
                               Navigator.pop(context);
-                              widget.onNavigateToBuilding?.call(destination);
+                              widget.onNavigateToHistory?.call(destination);
                             },
                           ),
                           const Divider(
@@ -843,27 +842,16 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
 // =========================================================================
 class _HistorySubScreen extends StatefulWidget {
   const _HistorySubScreen();
-
   @override
   State<_HistorySubScreen> createState() => _HistorySubScreenState();
 }
 
 class _HistorySubScreenState extends State<_HistorySubScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  List<NavigationHistoryEntry> _historyItems = [];
-  bool _isLoading = true;
-
-  List<NavigationHistoryEntry> get _filteredItems {
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _historyItems;
-    return _historyItems.where((item) {
-      return item.destinationName.toLowerCase().contains(query) ||
-          item.destinationAcronym.toLowerCase().contains(query) ||
-          (item.roomName?.toLowerCase().contains(query) ?? false) ||
-          item.originLabel.toLowerCase().contains(query) ||
-          _statusLabel(item.status).toLowerCase().contains(query);
-    }).toList();
-  }
+  final _searchController = TextEditingController();
+  List<NavigationHistoryEntry> _items = [];
+  bool _loading = true;
+  bool _mutating = false;
+  String? _error;
 
   @override
   void initState() {
@@ -877,546 +865,237 @@ class _HistorySubScreenState extends State<_HistorySubScreen> {
     super.dispose();
   }
 
+  String _message(Object error) =>
+      error.toString().replaceFirst('Exception: ', '');
+
   Future<void> _loadHistory() async {
-    final entries =
-        await NavigationHistoryService.load(UserSession.currentUsername);
-    if (!mounted) return;
     setState(() {
-      _historyItems = entries;
-      _isLoading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final items = await NavigationHistoryService.load();
+      if (!mounted) return;
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = _message(error);
+        _loading = false;
+      });
+    }
   }
 
-  Future<void> _deleteEntry(NavigationHistoryEntry entry) async {
-    setState(() => _historyItems.removeWhere((item) => item.id == entry.id));
-    await NavigationHistoryService.delete(
-      UserSession.currentUsername,
-      entry.id,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'History item deleted.',
-          style: GoogleFonts.montserrat(fontSize: 12.5),
-        ),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'UNDO',
-          textColor: const Color(0xFFA7F3D0),
-          onPressed: () async {
-            await NavigationHistoryService.upsert(
-              UserSession.currentUsername,
-              entry,
-            );
-            await _loadHistory();
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _clearHistory() async {
+  Future<void> _deleteHistory([NavigationHistoryEntry? entry]) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Clear navigation history?'),
-        content: const Text('This will remove all saved destinations.'),
+        title: Text(entry == null
+            ? 'Clear navigation history?'
+            : 'Delete history item?'),
+        content: Text(entry == null
+            ? 'This will remove all your saved destinations.'
+            : 'Remove ${entry.destinationName} from your history?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Clear'),
-          ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(entry == null ? 'Clear' : 'Delete')),
         ],
       ),
     );
-    if (confirmed != true) return;
-    await NavigationHistoryService.clear(UserSession.currentUsername);
-    if (!mounted) return;
-    setState(() => _historyItems.clear());
+    if (confirmed != true || !mounted) return;
+    setState(() => _mutating = true);
+    try {
+      if (entry == null) {
+        await NavigationHistoryService.clear();
+      } else {
+        await NavigationHistoryService.delete(entry.id);
+      }
+      if (!mounted) return;
+      setState(() {
+        if (entry == null) {
+          _items.clear();
+        } else {
+          _items.removeWhere((item) => item.id == entry.id);
+        }
+      });
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_message(error))));
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
   }
 
-  void _openDestination(NavigationHistoryEntry entry) {
-    final matches = isuCampusBuildings
-        .where((building) => building.id == entry.destinationId);
-    if (matches.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This destination is no longer available.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+  void _getDirections(NavigationHistoryEntry entry) {
+    final building = isuCampusBuildings
+        .where((b) => b.id == entry.destinationId)
+        .firstOrNull;
+    if (building == null ||
+        (entry.roomId != null &&
+            !building.rooms.any((room) => room.id == entry.roomId))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'This destination is no longer available. Refresh the map and try again.')));
       return;
     }
-    Navigator.pop(context, matches.first);
+    Navigator.pop(context, entry);
   }
 
-  String _statusLabel(NavigationHistoryStatus status) {
-    switch (status) {
-      case NavigationHistoryStatus.previewed:
-        return 'Previewed';
-      case NavigationHistoryStatus.navigationStarted:
-        return 'Navigation started';
-      case NavigationHistoryStatus.endedEarly:
-        return 'Ended early';
-      case NavigationHistoryStatus.completed:
-        return 'Completed';
-    }
-  }
-
-  Color _statusColor(NavigationHistoryStatus status) {
-    switch (status) {
-      case NavigationHistoryStatus.previewed:
-        return const Color(0xFF2563EB);
-      case NavigationHistoryStatus.navigationStarted:
-        return const Color(0xFF0F751B);
-      case NavigationHistoryStatus.endedEarly:
-        return const Color(0xFFD97706);
-      case NavigationHistoryStatus.completed:
-        return const Color(0xFF047857);
-    }
-  }
-
-  IconData _transportIcon(TransportMode mode) {
-    switch (mode) {
-      case TransportMode.walking:
-        return Icons.directions_walk;
-      case TransportMode.bicycle:
-        return Icons.pedal_bike;
-      case TransportMode.motorcycle:
-        return Icons.two_wheeler;
-      case TransportMode.car:
-        return Icons.directions_car;
-    }
-  }
-
-  String _transportLabel(TransportMode mode) {
-    switch (mode) {
-      case TransportMode.walking:
-        return 'Walk';
-      case TransportMode.bicycle:
-        return 'Bike';
-      case TransportMode.motorcycle:
-        return 'Motorcycle';
-      case TransportMode.car:
-        return 'Car';
-    }
-  }
-
-  String _dateGroup(DateTime date) {
+  String _timestamp(DateTime date) {
+    final local = date.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final itemDate = DateTime(date.year, date.month, date.day);
-    final difference = today.difference(itemDate).inDays;
-    if (difference == 0) return 'Today';
-    if (difference == 1) return 'Yesterday';
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  String _timeLabel(DateTime date) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${date.hour >= 12 ? 'PM' : 'AM'}';
+    final day = DateTime(local.year, local.month, local.day);
+    final label = day == today
+        ? 'Today'
+        : day == today.subtract(const Duration(days: 1))
+            ? 'Yesterday'
+            : '${local.month}/${local.day}/${local.year}';
+    final time =
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return '$label, $time';
   }
 
   @override
   Widget build(BuildContext context) {
-    final visibleItems = _filteredItems;
+    final query = _searchController.text.trim().toLowerCase();
+    final visible = _items
+        .where((item) =>
+            '${item.destinationName} ${item.destinationAcronym} ${item.roomName ?? ''}'
+                .toLowerCase()
+                .contains(query))
+        .toList();
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7F5),
+      backgroundColor: const Color(0xFFF5F8F6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072B18),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Text(
-          'History',
-          style: GoogleFonts.montserrat(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text('History'),
+        backgroundColor: const Color(0xFF0F751B),
+        foregroundColor: Colors.white,
         actions: [
-          if (_historyItems.isNotEmpty)
+          IconButton(
+              tooltip: 'Refresh history',
+              onPressed: _loading || _mutating ? null : _loadHistory,
+              icon: const Icon(Icons.refresh)),
+          if (_items.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: 'Clear History',
-              onPressed: _clearHistory,
-            ),
+                tooltip: 'Clear history',
+                onPressed:
+                    _loading || _mutating ? null : () => _deleteHistory(),
+                icon: const Icon(Icons.delete_sweep_outlined)),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+      body: Column(children: [
+        Padding(
+            padding: const EdgeInsets.all(18),
             child: TextField(
               controller: _searchController,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Search destinations or starting points',
-                hintStyle: GoogleFonts.montserrat(fontSize: 12.5),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF0F751B)),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close, size: 19),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      ),
+                hintText: 'Search destinations',
+                prefixIcon: const Icon(Icons.search),
                 filled: true,
                 fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 13),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFDDE7E0)),
-                ),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               ),
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF0F751B)),
-                  )
-                : _historyItems.isEmpty
-                    ? _buildEmptyHistory()
-                    : visibleItems.isEmpty
-                        ? _buildNoResults()
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-                            itemCount: visibleItems.length,
+            )),
+        if (_mutating) const LinearProgressIndicator(),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            Text(_error!, textAlign: TextAlign.center),
+                            TextButton(
+                                onPressed: _loadHistory,
+                                child: const Text('Retry')),
+                          ])))
+                  : visible.isEmpty
+                      ? Center(
+                          child: Text(
+                              _items.isEmpty
+                                  ? 'No navigation history yet.\nPreviewed and started routes will appear here.'
+                                  : 'No matching destinations found.',
+                              textAlign: TextAlign.center))
+                      : RefreshIndicator(
+                          onRefresh: _loadHistory,
+                          child: ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+                            itemCount: visible.length,
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 12),
                             itemBuilder: (context, index) {
-                              final entry = visibleItems[index];
-                              final group = _dateGroup(entry.updatedAt);
-                              final showGroup = index == 0 ||
-                                  _dateGroup(
-                                          visibleItems[index - 1].updatedAt) !=
-                                      group;
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (showGroup) ...[
-                                    Padding(
-                                      padding: EdgeInsets.only(
-                                        top: index == 0 ? 2 : 16,
-                                        bottom: 9,
-                                        left: 2,
-                                      ),
-                                      child: Text(
-                                        group,
-                                        style: GoogleFonts.montserrat(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFF52665A),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  _buildHistoryCard(entry),
-                                  const SizedBox(height: 11),
-                                ],
-                              );
+                              final entry = visible[index];
+                              return Card(
+                                  child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            const Icon(Icons.location_on,
+                                                color: Color(0xFF0F751B)),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                                child: Text(
+                                                    entry.destinationName,
+                                                    style:
+                                                        GoogleFonts.montserrat(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            fontSize: 14))),
+                                            IconButton(
+                                                tooltip: 'Delete item',
+                                                onPressed: _mutating
+                                                    ? null
+                                                    : () =>
+                                                        _deleteHistory(entry),
+                                                icon: const Icon(
+                                                    Icons.delete_outline)),
+                                          ]),
+                                          if (entry.roomName != null)
+                                            Text(entry.roomName!),
+                                          const SizedBox(height: 8),
+                                          Text(_timestamp(entry.createdAt),
+                                              style: const TextStyle(
+                                                  color: Colors.grey)),
+                                          const SizedBox(height: 12),
+                                          SizedBox(
+                                              width: double.infinity,
+                                              child: OutlinedButton.icon(
+                                                onPressed: _mutating
+                                                    ? null
+                                                    : () =>
+                                                        _getDirections(entry),
+                                                icon: const Icon(
+                                                    Icons.directions),
+                                                label: const Text(
+                                                    'Get directions'),
+                                                style: OutlinedButton.styleFrom(
+                                                    foregroundColor:
+                                                        const Color(
+                                                            0xFF0F751B)),
+                                              )),
+                                        ],
+                                      )));
                             },
-                          ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoryCard(NavigationHistoryEntry entry) {
-    final statusColor = _statusColor(entry.status);
-    final routeLabel = entry.routeType == RouteType.shortest
-        ? 'Shortest route'
-        : 'Comfortable path';
-    return Dismissible(
-      key: ValueKey(entry.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => _deleteEntry(entry),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 22),
-        decoration: BoxDecoration(
-          color: const Color(0xFFDC2626),
-          borderRadius: BorderRadius.circular(18),
+                          )),
         ),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
-      ),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () => _openDestination(entry),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFDDE7E0)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.035),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF7EE),
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Color(0xFF0F751B),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            entry.destinationName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.montserrat(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF17251D),
-                            ),
-                          ),
-                          if (entry.roomName != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              entry.roomName!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.montserrat(
-                                fontSize: 11.5,
-                                color: const Color(0xFF66756C),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Delete item',
-                      onPressed: () => _deleteEntry(entry),
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: Color(0xFF8A9690),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 11),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    _historyChip(
-                      _statusLabel(entry.status),
-                      Icons.circle,
-                      statusColor,
-                    ),
-                    _historyChip(
-                      _transportLabel(entry.transportMode),
-                      _transportIcon(entry.transportMode),
-                      const Color(0xFF0F751B),
-                    ),
-                    _historyChip(
-                      routeLabel,
-                      Icons.route,
-                      const Color(0xFF52665A),
-                    ),
-                  ],
-                ),
-                const Divider(height: 22, color: Color(0xFFE7ECE9)),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.trip_origin,
-                      size: 14,
-                      color: Color(0xFF22A653),
-                    ),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(
-                        '${entry.originLabel}  →  ${entry.destinationAcronym}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 11.5,
-                          color: const Color(0xFF52665A),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                Row(
-                  children: [
-                    Text(
-                      '${entry.distanceMeters.round()} m',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF17251D),
-                      ),
-                    ),
-                    const Text('  •  ', style: TextStyle(color: Colors.grey)),
-                    Text(
-                      '${entry.estimatedMinutes.ceil()} min',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF17251D),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _timeLabel(entry.updatedAt),
-                      style: GoogleFonts.montserrat(
-                        fontSize: 11,
-                        color: const Color(0xFF78847D),
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    const Icon(
-                      Icons.chevron_right,
-                      color: Color(0xFF0F751B),
-                      size: 19,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _historyChip(String label, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: icon == Icons.circle ? 7 : 13, color: color),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: GoogleFonts.montserrat(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyHistory() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: const BoxDecoration(
-                color: Color(0xFFEAF7EE),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.history,
-                size: 42,
-                color: Color(0xFF0F751B),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No navigation history yet',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.montserrat(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF26362D),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Previewed and started routes will appear here.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.montserrat(
-                fontSize: 12.5,
-                color: const Color(0xFF718078),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNoResults() {
-    return Center(
-      child: Text(
-        'No matching destinations found.',
-        style: GoogleFonts.montserrat(
-          fontSize: 13,
-          color: const Color(0xFF718078),
-        ),
-      ),
+      ]),
     );
   }
 }

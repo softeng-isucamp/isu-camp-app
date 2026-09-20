@@ -8,6 +8,7 @@ from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
 from app.utils.email import send_otp_email
+from app.utils.session import issue_session, session_secret
 
 
 router = APIRouter(
@@ -180,6 +181,7 @@ class SetPasswordRequest(BaseModel):
 
 @router.post("/signup/set-password")
 def set_password(data: SetPasswordRequest):
+    session_secret()
 
     # Find verified signup
     result = (
@@ -304,5 +306,6 @@ def set_password(data: SetPasswordRequest):
 
     return {
         "success": True,
-        "message": "Account created successfully."
+        "message": "Account created successfully.",
+        "access_token": issue_session(user.data[0]["id"]),
     }

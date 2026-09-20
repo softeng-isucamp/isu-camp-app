@@ -293,7 +293,7 @@ Future<void> _handleStep3Complete() async {
   }
 
   try {
-    await AuthService.setSignupPassword(
+    final response = await AuthService.setSignupPassword(
       email: _emailController.text.trim(),
       password: password,
       confirmPassword: confirmPassword,
@@ -311,6 +311,7 @@ Future<void> _handleStep3Complete() async {
 
     UserSession.setLoggedInUser(
       username: registeredUsername,
+      token: response['access_token'] as String?,
     );
 
     _showSnackBar(

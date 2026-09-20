@@ -121,7 +121,7 @@ class HelpScreen extends StatelessWidget {
                           'Select your preferred route:',
                           '• Shortest – shortest available path.',
                           '• Shaded – route with more shaded areas.',
-                          '• Comfortable – route based on comfort-related path information.',
+                          '• Shaded Path – prefers shaded pathways.',
                         ],
                       ),
 

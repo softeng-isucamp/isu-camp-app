@@ -1,80 +1,86 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:isu_camp_app/features/dashboard/models/campus_models.dart';
-import 'package:isu_camp_app/features/dashboard/models/navigation_history.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:isu_camp_app/features/auth/services/user_session.dart';
 import 'package:isu_camp_app/features/dashboard/services/navigation_history_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  NavigationHistoryEntry entry({
-    required String id,
-    required DateTime time,
-    NavigationHistoryStatus status = NavigationHistoryStatus.previewed,
-  }) {
-    return NavigationHistoryEntry(
-      id: id,
-      destinationId: 'osas',
-      destinationName: 'Office of Student Affairs and Services',
-      destinationAcronym: 'OSAS',
-      originLabel: 'ISU Main Gate',
-      routeType: RouteType.shortest,
-      transportMode: TransportMode.walking,
-      distanceMeters: 120,
-      estimatedMinutes: 2,
-      status: status,
-      createdAt: time,
-      updatedAt: time,
-    );
-  }
+  setUp(() => UserSession.setLoggedInUser(
+      username: 'student', token: 'signed-session'));
+  tearDown(UserSession.logout);
 
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
-  });
-
-  test('history is saved per user and sorted newest first', () async {
-    final older = entry(id: 'older', time: DateTime(2026, 9, 18, 9));
-    final newer = entry(id: 'newer', time: DateTime(2026, 9, 19, 10));
-
-    await NavigationHistoryService.upsert('student', older);
-    await NavigationHistoryService.upsert('student', newer);
-
-    final results = await NavigationHistoryService.load('student');
-    expect(results.map((item) => item.id), ['newer', 'older']);
-    expect(await NavigationHistoryService.load('another-user'), isEmpty);
-  });
-
-  test('starting navigation updates the preview entry without duplicating it',
+  test('loads joined database names with the session and handles pagination',
       () async {
-    final preview = entry(id: 'same-session', time: DateTime(2026, 9, 19, 10));
-    final started = preview.copyWith(
-      status: NavigationHistoryStatus.navigationStarted,
-      updatedAt: DateTime(2026, 9, 19, 10, 1),
-    );
-
-    await NavigationHistoryService.upsert('student', preview);
-    await NavigationHistoryService.upsert('student', started);
-
-    final results = await NavigationHistoryService.load('student');
-    expect(results, hasLength(1));
-    expect(results.single.status, NavigationHistoryStatus.navigationStarted);
+    var calls = 0;
+    await http.runWithClient(() async {
+      final entries = await NavigationHistoryService.load();
+      expect(entries, hasLength(101));
+      expect(entries.first.roomName, 'Lab');
+      expect(entries.first.destinationName, 'CCSICT');
+      expect(calls, 2);
+    },
+        () => MockClient((request) async {
+              expect(request.headers['Authorization'], 'Bearer signed-session');
+              expect(request.url.queryParameters['offset'],
+                  calls == 0 ? '0' : '100');
+              calls++;
+              return http.Response(
+                  jsonEncode({
+                    'entries': List.generate(
+                        calls == 1 ? 100 : 1,
+                        (i) => {
+                              'id': '${calls * 100 + i}',
+                              'destinationId': '8',
+                              'destinationName': 'CCSICT',
+                              'destinationAcronym': 'CCS',
+                              'roomId': '9',
+                              'roomName': 'Lab',
+                              'createdAt': '2026-09-20T01:00:00Z',
+                            })
+                  }),
+                  200);
+            }));
   });
 
-  test('history supports individual delete and clear all', () async {
-    await NavigationHistoryService.upsert(
-      'student',
-      entry(id: 'one', time: DateTime(2026, 9, 19, 10)),
-    );
-    await NavigationHistoryService.upsert(
-      'student',
-      entry(id: 'two', time: DateTime(2026, 9, 19, 11)),
-    );
+  test('record sends foreign keys only, including nullable room', () async {
+    await http.runWithClient(() async {
+      await NavigationHistoryService.record(
+          buildingId: '8', token: 'captured-session');
+    },
+        () => MockClient((request) async {
+              expect(request.method, 'POST');
+              expect(
+                  request.headers['Authorization'], 'Bearer captured-session');
+              expect(jsonDecode(request.body),
+                  {'buildingId': 8, 'locationId': null});
+              return http.Response('{"id":"1"}', 201);
+            }));
+  });
 
-    await NavigationHistoryService.delete('student', 'one');
-    expect(
-      (await NavigationHistoryService.load('student')).single.id,
-      'two',
-    );
+  test('delete and clear use authenticated endpoints', () async {
+    final paths = <String>[];
+    await http.runWithClient(() async {
+      await NavigationHistoryService.delete('15');
+      await NavigationHistoryService.clear();
+      expect(paths, ['/history/15', '/history']);
+    },
+        () => MockClient((request) async {
+              expect(request.method, 'DELETE');
+              expect(request.headers['Authorization'], 'Bearer signed-session');
+              paths.add(request.url.path);
+              return http.Response('{"success":true}', 200);
+            }));
+  });
 
-    await NavigationHistoryService.clear('student');
-    expect(await NavigationHistoryService.load('student'), isEmpty);
+  test('expired and missing sessions report errors rather than empty history',
+      () async {
+    await http.runWithClient(() async {
+      await expectLater(NavigationHistoryService.load(), throwsException);
+    },
+        () => MockClient((_) async =>
+            http.Response('{"detail":"Please log in again."}', 401)));
+    UserSession.logout();
+    await expectLater(NavigationHistoryService.load(), throwsException);
   });
 }

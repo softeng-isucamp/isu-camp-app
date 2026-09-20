@@ -48,6 +48,55 @@ void main() {
     expect(routeModeIcon(TransportMode.walking), Icons.directions_walk);
   });
 
+  testWidgets(
+      'only current location can start navigation; all origins can preview',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final route = WalkingRoute.fromJson({
+      'type': 'shortest',
+      'distanceMeters': 120,
+      'estimatedMinutes': 2,
+      'startNodeName': 'Entrance',
+      'pathPoints': [
+        [16.7216, 121.6917],
+        [16.7220, 121.6920]
+      ],
+      'steps': [],
+    });
+    var starts = 0;
+    var previews = 0;
+    for (final selectedOrigin in [buildingOrigin, origin, currentLocation]) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: RouteDetailsSheet(
+              route: route,
+              destination: destination,
+              origin: selectedOrigin,
+              selectedRouteType: RouteType.shortest,
+              onBack: () {},
+              onCancel: () {},
+              onPreviewRoute: () => previews++,
+              onStartNavigation: () => starts++,
+            ),
+          ),
+        ),
+      ));
+      await tester.ensureVisible(find.text('Preview'));
+      await tester.tap(find.text('Preview'));
+      if (selectedOrigin.type == NavigationOriginType.currentLocation) {
+        expect(find.text('Start'), findsOneWidget);
+        await tester.tap(find.text('Start'));
+      } else {
+        expect(find.text('Start'), findsNothing);
+        expect(find.textContaining('Preview only.'), findsOneWidget);
+      }
+    }
+    expect(previews, 3);
+    expect(starts, 1);
+  });
+
   test('walking route keeps structured preview step details', () {
     final route = WalkingRoute.fromJson({
       'type': 'shortest',

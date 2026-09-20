@@ -1,69 +1,79 @@
 import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:http/http.dart' as http;
+import '../../auth/services/auth_service.dart';
+import '../../auth/services/user_session.dart';
 import '../models/navigation_history.dart';
 
 class NavigationHistoryService {
-  static const int _maximumEntries = 100;
+  static Map<String, String> _headers([String? token]) {
+    final session = token ?? UserSession.accessToken;
+    if (session == null || session.isEmpty) {
+      throw Exception('Please log in again to access your history.');
+    }
+    return {
+      'Authorization': 'Bearer $session',
+      'Content-Type': 'application/json'
+    };
+  }
 
-  static String _storageKey(String username) =>
-      'navigation_history_${username.trim().toLowerCase()}';
+  static Map<String, dynamic> _decode(http.Response response) {
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(data['detail'] is String
+          ? data['detail']
+          : 'History request failed.');
+    }
+    return data;
+  }
 
-  static Future<List<NavigationHistoryEntry>> load(String username) async {
-    final preferences = await SharedPreferences.getInstance();
-    final encodedEntries =
-        preferences.getStringList(_storageKey(username)) ?? const [];
+  static Future<List<NavigationHistoryEntry>> load() async {
+    final headers = _headers();
     final entries = <NavigationHistoryEntry>[];
-
-    for (final encodedEntry in encodedEntries) {
-      try {
-        entries.add(NavigationHistoryEntry.fromJson(
-          Map<String, dynamic>.from(jsonDecode(encodedEntry) as Map),
-        ));
-      } catch (_) {
-        // Ignore one malformed local item without hiding valid history.
-      }
+    while (true) {
+      final response = await http
+          .get(
+            Uri.parse(
+                '${AuthService.baseUrl}/history?offset=${entries.length}'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 20));
+      final page = _decode(response)['entries'] as List;
+      entries.addAll(page.map((row) => NavigationHistoryEntry.fromJson(
+          Map<String, dynamic>.from(row as Map))));
+      if (page.length < 100) return entries;
     }
-
-    entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return entries;
   }
 
-  static Future<void> upsert(
-    String username,
-    NavigationHistoryEntry entry,
-  ) async {
-    final entries = await load(username);
-    final existingIndex = entries.indexWhere((item) => item.id == entry.id);
-    if (existingIndex == -1) {
-      entries.add(entry);
-    } else {
-      entries[existingIndex] = entry;
-    }
-    entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _save(username, entries.take(_maximumEntries).toList());
+  static Future<void> record(
+      {required String buildingId,
+      String? roomId,
+      required String token}) async {
+    final response = await http
+        .post(Uri.parse('${AuthService.baseUrl}/history'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'buildingId': int.parse(buildingId),
+              'locationId': roomId == null ? null : int.parse(roomId),
+            }))
+        .timeout(const Duration(seconds: 20));
+    _decode(response);
   }
 
-  static Future<void> delete(String username, String id) async {
-    final entries = await load(username);
-    entries.removeWhere((entry) => entry.id == id);
-    await _save(username, entries);
+  static Future<void> delete(String id) async {
+    final response = await http
+        .delete(
+            Uri.parse(
+                '${AuthService.baseUrl}/history/${Uri.encodeComponent(id)}'),
+            headers: _headers())
+        .timeout(const Duration(seconds: 20));
+    _decode(response);
   }
 
-  static Future<void> clear(String username) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.remove(_storageKey(username));
-  }
-
-  static Future<void> _save(
-    String username,
-    List<NavigationHistoryEntry> entries,
-  ) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setStringList(
-      _storageKey(username),
-      entries.map((entry) => jsonEncode(entry.toJson())).toList(),
-    );
+  static Future<void> clear() async {
+    final response = await http
+        .delete(Uri.parse('${AuthService.baseUrl}/history'),
+            headers: _headers())
+        .timeout(const Duration(seconds: 20));
+    _decode(response);
   }
 }

@@ -5,6 +5,7 @@ from app.database.supabase import supabase
 from app.routes.auth import router as auth_router
 from app.routes.login import router as login_router
 from app.routes.campus import router as campus_router
+from app.routes.history import router as history_router
 
 
 app = FastAPI(title="ISU-CAMP Backend")
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(login_router)
 app.include_router(campus_router)
+app.include_router(history_router)
 
 
 # ==========================================
