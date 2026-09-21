@@ -1,14 +1,16 @@
+import logging
 import random
 import re
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
-from app.utils.email import send_otp_email
+from app.utils.email import queue_otp_email
 from app.utils.session import issue_session
 
 
@@ -17,16 +19,39 @@ router = APIRouter(
     tags=["Authentication"]
 )
 
+logger = logging.getLogger(__name__)
+
 password_hash = PasswordHash.recommended()
 
 MAX_LOGIN_ATTEMPTS = 6
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=5)
-_login_attempts = {}
+
+# Failed-login state lives in this process only.
+#
+# Two consequences worth knowing before changing how the server is run:
+#   * Under `uvicorn --workers N` the effective threshold becomes 6*N and which
+#     worker sees an attempt is arbitrary. Moving to multiple workers means
+#     moving this state into the database first.
+#   * A password spray against random usernames would otherwise grow this map
+#     without bound, so it is capped and expired entries are evicted on write.
+MAX_TRACKED_IDENTIFIERS = 10_000
+
+_login_attempts = OrderedDict()
 _login_attempts_lock = threading.Lock()
 
 
 def _login_key(identifier: str) -> str:
     return identifier.strip().casefold()
+
+
+def _evict(now: datetime) -> None:
+    """Drop lapsed lockouts, then the least recently seen. Caller holds the lock."""
+    for key, state in list(_login_attempts.items()):
+        locked_until = state.get("locked_until")
+        if locked_until and locked_until <= now:
+            del _login_attempts[key]
+    while len(_login_attempts) > MAX_TRACKED_IDENTIFIERS:
+        _login_attempts.popitem(last=False)
 
 
 def _remaining_lockout(identifier: str) -> int:
@@ -50,10 +75,13 @@ def _record_failed_login(identifier: str) -> tuple[int, int]:
     now = datetime.now(timezone.utc)
     with _login_attempts_lock:
         state = _login_attempts.setdefault(key, {"attempts": 0})
+        _login_attempts.move_to_end(key)
         state["attempts"] += 1
         if state["attempts"] >= MAX_LOGIN_ATTEMPTS:
             state["locked_until"] = now + LOGIN_LOCKOUT_DURATION
+            _evict(now)
             return state["attempts"], int(LOGIN_LOCKOUT_DURATION.total_seconds())
+        _evict(now)
         return state["attempts"], 0
 
 
@@ -83,6 +111,63 @@ def _invalid_login(identifier: str):
 
 
 # ==========================================
+# ACCOUNT LOOKUP
+# ==========================================
+
+# One round trip instead of two: PostgREST embeds the related row for us.
+USER_WITH_INFO = "id, username, info_id, userInfo!info_id(id, email, password)"
+INFO_WITH_USER = "id, email, password, user!info_id(id, username)"
+
+
+def _embedded(value):
+    """A to-one embed arrives as an object, a to-many as a list of one."""
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _account(identifier: str):
+    """(user row, userInfo row) for a username or an email, either may be None.
+
+    A database failure becomes a 503 rather than escaping as a bare 500 with a
+    stack trace: this runs on the login and password-reset paths, where the
+    client shows `detail` straight to the user.
+    """
+    try:
+        if "@" in identifier:
+            rows = (
+                supabase
+                .table("userInfo")
+                .select(INFO_WITH_USER)
+                .eq("email", identifier)
+                .execute()
+                .data
+            )
+            if not rows:
+                return None, None
+            return _embedded(rows[0].get("user")), rows[0]
+
+        rows = (
+            supabase
+            .table("user")
+            .select(USER_WITH_INFO)
+            .eq("username", identifier)
+            .execute()
+            .data
+        )
+    except Exception:
+        logger.exception("Could not look up the account for %r", identifier)
+        raise HTTPException(
+            status_code=503,
+            detail="We can't reach the account service right now. Please try again.",
+        ) from None
+
+    if not rows:
+        return None, None
+    return rows[0], _embedded(rows[0].get("userInfo"))
+
+
+# ==========================================
 # LOGIN
 # ==========================================
 
@@ -109,55 +194,13 @@ def login(data: LoginRequest):
         )
 
     # ======================================
-    # LOGIN USING EMAIL
+    # FIND THE ACCOUNT (EMAIL OR USERNAME)
     # ======================================
 
-    if "@" in identifier:
+    user, user_info = _account(identifier)
 
-        result = (
-            supabase
-            .table("userInfo")
-            .select("id, email, password")
-            .eq("email", identifier)
-            .execute()
-        )
-
-        if not result.data:
-            _invalid_login(identifier)
-
-        user_info = result.data[0]
-
-    # ======================================
-    # LOGIN USING USERNAME
-    # ======================================
-
-    else:
-
-        user_result = (
-            supabase
-            .table("user")
-            .select("id, username, info_id")
-            .eq("username", identifier)
-            .execute()
-        )
-
-        if not user_result.data:
-            _invalid_login(identifier)
-
-        user = user_result.data[0]
-
-        user_info_result = (
-            supabase
-            .table("userInfo")
-            .select("id, email, password")
-            .eq("id", user["info_id"])
-            .execute()
-        )
-
-        if not user_info_result.data:
-            _invalid_login(identifier)
-
-        user_info = user_info_result.data[0]
+    if user_info is None:
+        _invalid_login(identifier)
 
     # ======================================
     # VERIFY PASSWORD
@@ -178,23 +221,15 @@ def login(data: LoginRequest):
     # GET USER
     # ======================================
 
-    user_result = (
-        supabase
-        .table("user")
-        .select("id, username, info_id")
-        .eq("info_id", user_info["id"])
-        .execute()
-    )
-
-    if not user_result.data:
+    # Checked only after the password, so a missing user row cannot be used to
+    # probe which accounts exist.
+    if user is None:
         raise HTTPException(
             status_code=404,
             detail="User account not found."
         )
 
     _clear_login_attempts(identifier)
-
-    user = user_result.data[0]
 
     # ======================================
     # SUCCESS
@@ -236,88 +271,30 @@ class ResetPasswordRequest(BaseModel):
 # ============================================================
 
 def get_user_by_identifier(identifier: str):
+    """Resolve a username or email to {email, username, info_id}.
 
-    identifier = identifier.strip()
+    One round trip via the embedded join; the four not-found cases below are
+    the same ones the previous two-query version distinguished.
+    """
+    user, user_info = _account(identifier.strip())
 
-    # ======================================
-    # IDENTIFIER IS EMAIL
-    # ======================================
-
-    if "@" in identifier:
-
-        info_result = (
-            supabase
-            .table("userInfo")
-            .select("id, email")
-            .eq("email", identifier)
-            .execute()
-        )
-
-        if not info_result.data:
-            raise HTTPException(
-                status_code=404,
-                detail="Account not found."
-            )
-
-        user_info = info_result.data[0]
-
-        user_result = (
-            supabase
-            .table("user")
-            .select("id, username, info_id")
-            .eq("info_id", user_info["id"])
-            .execute()
-        )
-
-        if not user_result.data:
-            raise HTTPException(
-                status_code=404,
-                detail="User account not found."
-            )
-
-        user = user_result.data[0]
-
-        return {
-            "email": user_info["email"],
-            "username": user["username"],
-            "info_id": user_info["id"]
-        }
-
-    # ======================================
-    # IDENTIFIER IS USERNAME
-    # ======================================
-
-    user_result = (
-        supabase
-        .table("user")
-        .select("id, username, info_id")
-        .eq("username", identifier)
-        .execute()
-    )
-
-    if not user_result.data:
+    if user is None and user_info is None:
         raise HTTPException(
             status_code=404,
             detail="Account not found."
         )
 
-    user = user_result.data[0]
-
-    info_result = (
-        supabase
-        .table("userInfo")
-        .select("id, email")
-        .eq("id", user["info_id"])
-        .execute()
-    )
-
-    if not info_result.data:
+    if user_info is None:
         raise HTTPException(
             status_code=404,
             detail="User information not found."
         )
 
-    user_info = info_result.data[0]
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User account not found."
+        )
 
     return {
         "email": user_info["email"],
@@ -332,7 +309,8 @@ def get_user_by_identifier(identifier: str):
 
 @router.post("/forgot-password/request-otp")
 def forgot_password_request_otp(
-    data: ForgotPasswordRequest
+    data: ForgotPasswordRequest,
+    background: BackgroundTasks
 ):
 
     user = get_user_by_identifier(
@@ -352,11 +330,11 @@ def forgot_password_request_otp(
         + timedelta(minutes=5)
     )
 
-    try:
-        # ======================================
-        # SAVE OTP TO pending_verification
-        # ======================================
+    # ======================================
+    # SAVE OTP TO pending_verification
+    # ======================================
 
+    try:
         supabase.table(
             "pending_verification"
         ).upsert(
@@ -371,33 +349,25 @@ def forgot_password_request_otp(
             on_conflict="email"
         ).execute()
 
-        # ======================================
-        # SEND EMAIL
-        # ======================================
-
-        send_otp_email(
-            email,
-            str(otp)
-        )
-
-    except Exception as e:
-
-        # Remove OTP if email sending failed
-        try:
-            (
-                supabase
-                .table("pending_verification")
-                .delete()
-                .eq("email", email)
-                .execute()
-            )
-        except Exception:
-            pass
-
+    except Exception:
+        logger.exception("Could not store the password reset OTP")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to send OTP: {str(e)}"
-        )
+            status_code=503,
+            detail="Could not send the verification code. Please try again."
+        ) from None
+
+    # ======================================
+    # SEND EMAIL
+    # ======================================
+
+    # Queued rather than sent inline: the SMTP handshake costs 1-3 s. The row
+    # above expires in five minutes, so a failed delivery resolves itself when
+    # the user asks for another code.
+    queue_otp_email(
+        background,
+        email,
+        str(otp)
+    )
 
     return {
         "success": True,

@@ -2,12 +2,12 @@ import random
 import re
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, EmailStr
 from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
-from app.utils.email import send_otp_email
+from app.utils.email import queue_otp_email
 from app.utils.session import issue_session, session_secret
 
 
@@ -29,7 +29,7 @@ class SignupRequest(BaseModel):
 
 
 @router.post("/signup/request-otp")
-def request_otp(data: SignupRequest):
+def request_otp(data: SignupRequest, background: BackgroundTasks):
 
     existing_email = (
         supabase
@@ -78,7 +78,10 @@ def request_otp(data: SignupRequest):
         on_conflict="email"
     ).execute()
 
-    send_otp_email(
+    # Delivery happens after the response; the handshake with the provider
+    # costs 1-3 s and the user has no reason to wait for it.
+    queue_otp_email(
+        background,
         data.email,
         str(otp)
     )

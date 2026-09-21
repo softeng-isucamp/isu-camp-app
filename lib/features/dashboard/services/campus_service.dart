@@ -10,7 +10,7 @@ class CampusService {
       NavigationOrigin origin, CampusBuilding destination) async {
     final response = await http
         .post(
-          Uri.parse('${AuthService.baseUrl}/campus/routes'),
+          AuthService.endpoint('/campus/routes'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'mode': 'walking',
@@ -40,7 +40,7 @@ class CampusService {
   static Future<List<CampusBuilding>> fetchBuildings() async {
     final response = await http
         .get(
-          Uri.parse('${AuthService.baseUrl}/campus/buildings'),
+          AuthService.endpoint('/campus/buildings'),
         )
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {

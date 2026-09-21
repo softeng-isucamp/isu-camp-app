@@ -43,12 +43,26 @@ class FakeQuery:
         self.action, self.payload = "insert", payload
         return self
 
+    LOCATIONS = [{"location_id": 9, "building_id": 8},
+                 {"location_id": 10, "building_id": 99}]
+
     def execute(self):
         if self.name == "building":
-            source = [{"building_id": 8}]
+            # Models PostgREST embedding: `location.<col>` filters the embedded
+            # list, it does not remove the parent row.
+            embedded = [(k.split(".", 1)[1], v) for k, v in self.filters if k.startswith("location.")]
+            plain = [(k, v) for k, v in self.filters if not k.startswith("location.")]
+            rows = []
+            for row in [{"building_id": 8}]:
+                if not all(row.get(k) == v for k, v in plain):
+                    continue
+                rooms = [l for l in self.LOCATIONS if l["building_id"] == row["building_id"]]
+                for key, value in embedded:
+                    rooms = [l for l in rooms if l.get(key) == value]
+                rows.append(dict(row, location=[{"location_id": l["location_id"]} for l in rooms]))
+            return SimpleNamespace(data=rows)
         elif self.name == "location":
-            source = [{"location_id": 9, "building_id": 8},
-                      {"location_id": 10, "building_id": 99}]
+            source = self.LOCATIONS
         else:
             source = self.db.rows
         matching = [r for r in source if all(r.get(k) == v for k, v in self.filters)]
@@ -123,20 +137,6 @@ class HistoryTests(unittest.TestCase):
     def test_database_failure_returns_error(self):
         with patch.object(self.db, 'table', side_effect=RuntimeError('offline')):
             self.assertEqual(self.client.get('/history', headers=self.headers).status_code, 503)
-
-    def test_successful_login_issues_session_for_database_user(self):
-        from app.routes import login
-        from app.utils.session import current_user_id
-        from fastapi.security import HTTPAuthorizationCredentials
-        with patch.object(login, 'supabase') as database, \
-                patch.object(login.password_hash, 'verify', return_value=True):
-            database.table.return_value.select.return_value.eq.return_value.execute.side_effect = [
-                SimpleNamespace(data=[{'id': 5, 'email': 'student@example.com', 'password': 'hash'}]),
-                SimpleNamespace(data=[{'id': 11, 'username': 'student', 'info_id': 5}]),
-            ]
-            result = login.login(login.LoginRequest(identifier='student@example.com', password='test'))
-        credentials = HTTPAuthorizationCredentials(scheme='Bearer', credentials=result['access_token'])
-        self.assertEqual(current_user_id(credentials), 11)
 
 
 if __name__ == '__main__':

@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../auth/services/auth_service.dart' show ApiException;
 import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
 import '../models/campus_models.dart';
@@ -235,12 +236,15 @@ class _MapViewScreenState extends State<MapViewScreen> {
         isuCampusBuildings.addAll(buildings);
         _isLoadingBuildings = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isLoadingBuildings = false;
-        _buildingsError =
-            'Unable to load campus locations. Check your connection and try again.';
+        // An ApiException carries a message written for the user - a build
+        // with no backend address says so, rather than blaming the network.
+        _buildingsError = error is ApiException
+            ? error.message
+            : 'Unable to load campus locations. Check your connection and try again.';
       });
     }
   }

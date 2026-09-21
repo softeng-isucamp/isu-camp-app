@@ -32,8 +32,7 @@ class NavigationHistoryService {
     while (true) {
       final response = await http
           .get(
-            Uri.parse(
-                '${AuthService.baseUrl}/history?offset=${entries.length}'),
+            AuthService.endpoint('/history?offset=${entries.length}'),
             headers: headers,
           )
           .timeout(const Duration(seconds: 20));
@@ -49,7 +48,7 @@ class NavigationHistoryService {
       String? roomId,
       required String token}) async {
     final response = await http
-        .post(Uri.parse('${AuthService.baseUrl}/history'),
+        .post(AuthService.endpoint('/history'),
             headers: _headers(token),
             body: jsonEncode({
               'buildingId': int.parse(buildingId),
@@ -62,8 +61,7 @@ class NavigationHistoryService {
   static Future<void> delete(String id) async {
     final response = await http
         .delete(
-            Uri.parse(
-                '${AuthService.baseUrl}/history/${Uri.encodeComponent(id)}'),
+            AuthService.endpoint('/history/${Uri.encodeComponent(id)}'),
             headers: _headers())
         .timeout(const Duration(seconds: 20));
     _decode(response);
@@ -71,7 +69,7 @@ class NavigationHistoryService {
 
   static Future<void> clear() async {
     final response = await http
-        .delete(Uri.parse('${AuthService.baseUrl}/history'),
+        .delete(AuthService.endpoint('/history'),
             headers: _headers())
         .timeout(const Duration(seconds: 20));
     _decode(response);

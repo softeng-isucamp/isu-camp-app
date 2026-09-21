@@ -13,6 +13,8 @@ HISTORY_SELECT = (
     "building:building!Building_id(building_name,building_code),"
     "location:location!Location_id(location_name)"
 )
+# Existence of the building and membership of the room, in one round trip.
+BUILDING_WITH_LOCATION = "building_id,location(location_id)"
 
 
 class HistoryRequest(BaseModel):
@@ -48,16 +50,17 @@ def list_history(offset: int = Query(0, ge=0), user_id: int = Depends(current_us
 @router.post("", status_code=201)
 def create_history(data: HistoryRequest, user_id: int = Depends(current_user_id)):
     try:
-        building = (supabase.table("building").select("building_id")
-                    .eq("building_id", data.buildingId).execute().data)
+        query = (supabase.table("building").select(BUILDING_WITH_LOCATION)
+                 .eq("building_id", data.buildingId))
+        if data.locationId is not None:
+            # Filters the embedded rooms, so a mismatch comes back as an empty
+            # list rather than dropping the building row.
+            query = query.eq("location.location_id", data.locationId)
+        building = query.execute().data
         if not building:
             raise HTTPException(404, "This building is no longer available.")
-        if data.locationId is not None:
-            location = (supabase.table("location").select("location_id")
-                        .eq("location_id", data.locationId)
-                        .eq("building_id", data.buildingId).execute().data)
-            if not location:
-                raise HTTPException(400, "This room does not belong to the selected building.")
+        if data.locationId is not None and not (building[0].get("location") or []):
+            raise HTTPException(400, "This room does not belong to the selected building.")
         rows = supabase.table("UserHistory").insert({
             "User_id": user_id, "Building_id": data.buildingId,
             "Location_id": data.locationId,

@@ -20,9 +20,14 @@ def meters(a, b):
     return 6371000 * 2 * math.asin(min(1, math.sqrt(h)))
 
 
-def walking_routes(nodes, pathways, modes, points, request):
-    if request.get("mode", "walking") != "walking":
-        raise RoutingError("Routing is currently available for Walking only.")
+def build_graph(nodes, pathways, modes, points):
+    """The walking adjacency lists, derived from the campus tables alone.
+
+    Split out of walking_routes so the result survives across requests: the
+    network changes rarely, while origin and destination change every call.
+    The return value is shared and read from several threads at once, so
+    routes_for only ever reads it.
+    """
     nodes = {str(n["node_id"]): dict(n, position=coordinate(n.get("latitude"), n.get("longitude")))
              for n in nodes if str(n.get("status", "")).lower() == "active"}
     nodes = {k: n for k, n in nodes.items() if n["position"] is not None}
@@ -61,7 +66,16 @@ def walking_routes(nodes, pathways, modes, points, request):
         graph[a].append((b, edge))
         if direction == "twoway":
             graph[b].append((a, dict(edge, points=list(reversed(geometry)))))
+    return nodes, graph
 
+
+def routes_for(nodes, graph, request):
+    """The shortest and the most shaded walking route for one request.
+
+    Reads the shared graph from build_graph without mutating it.
+    """
+    if request.get("mode", "walking") != "walking":
+        raise RoutingError("Routing is currently available for Walking only.")
     targets = {k for k, n in nodes.items() if n.get("building_id") is not None
                and str(n["building_id"]) == str(request["destinationBuildingId"])
                and str(n.get("node_type", "")).lower() == "entrance"}
@@ -128,3 +142,8 @@ def walking_routes(nodes, pathways, modes, points, request):
                 "steps": [{"instruction": "Follow " + e["name"], "distanceMeters": e["distanceMeters"],
                            "coordinate": e["points"][0]} for e in edges]}
     return {"routes": [solve(False), solve(True)]}
+
+
+def walking_routes(nodes, pathways, modes, points, request):
+    """Build the graph and solve in one call, for callers holding raw rows."""
+    return routes_for(*build_graph(nodes, pathways, modes, points), request)
