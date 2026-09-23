@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
@@ -22,6 +23,10 @@ import 'user_info_screen.dart';
 
 const Color navigationRouteBlue = Color(0xFF2563EB);
 const double _initialCampusZoom = 16.8;
+const String _mapSatellitePreferenceKey = 'map_satellite_enabled';
+const String _streetTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const String _satelliteTileUrl =
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 double buildingLabelOpacity(double zoom) =>
     ((zoom - 17.2) / 1.0).clamp(0.0, 1.0);
@@ -83,6 +88,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
   bool _hasSelectedOrigin = false;
   bool _isLoadingBuildings = true;
   String? _buildingsError;
+  bool _isSatelliteMode = false;
+  bool _isMapStylePreferenceLoaded = false;
+  bool _hasSatelliteTileError = false;
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<CompassEvent>? _compassSubscription;
   double? _movementHeading;
@@ -234,11 +242,48 @@ class _MapViewScreenState extends State<MapViewScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadMapStylePreference());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _loadBuildings();
       _initializeCurrentLocation();
     });
+  }
+
+  Future<void> _loadMapStylePreference() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _isSatelliteMode =
+            preferences.getBool(_mapSatellitePreferenceKey) ?? false;
+        _isMapStylePreferenceLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isMapStylePreferenceLoaded = true);
+    }
+  }
+
+  Future<void> _selectMapStyle(bool useSatellite) async {
+    if (!_isMapStylePreferenceLoaded || _isSatelliteMode == useSatellite)
+      return;
+    setState(() {
+      _isSatelliteMode = useSatellite;
+      _hasSatelliteTileError = false;
+    });
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_mapSatellitePreferenceKey, useSatellite);
+    } catch (_) {
+      // Keep the selected style available for this screen if preferences fail.
+    }
+  }
+
+  void _recordSatelliteTileError() {
+    if (!mounted || !_isSatelliteMode || _hasSatelliteTileError) return;
+    setState(() => _hasSatelliteTileError = true);
   }
 
   Future<void> _loadBuildings() async {
@@ -690,10 +735,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 },
               ),
               children: [
-                // OpenStreetMap Tile Layer
+                // Street and satellite tiles share the same campus overlays.
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  key: ValueKey(
+                      _isSatelliteMode ? 'satellite-tiles' : 'street-tiles'),
+                  urlTemplate:
+                      _isSatelliteMode ? _satelliteTileUrl : _streetTileUrl,
                   userAgentPackageName: 'com.isucamp.app',
+                  errorTileCallback: _isSatelliteMode
+                      ? (_, __, ___) => _recordSatelliteTileError()
+                      : null,
                 ),
 
                 PolygonLayer(
@@ -1003,7 +1054,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution(
-                      'OpenStreetMap contributors',
+                      _isSatelliteMode
+                          ? 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community'
+                          : 'OpenStreetMap contributors',
                       onTap: () {},
                     ),
                   ],
@@ -1011,6 +1064,87 @@ class _MapViewScreenState extends State<MapViewScreen> {
               ],
             ),
           ),
+
+          if (!_isNavigationActive)
+            Positioned(
+              key: const ValueKey('map-style-controls'),
+              left: 16,
+              right: 72,
+              top: topPadding + 210,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ToggleButtons(
+                  borderRadius: BorderRadius.circular(12),
+                  constraints:
+                      const BoxConstraints(minHeight: 42, minWidth: 86),
+                  isSelected: [_isSatelliteMode == false, _isSatelliteMode],
+                  onPressed: _isMapStylePreferenceLoaded
+                      ? (index) => _selectMapStyle(index == 1)
+                      : null,
+                  children: [
+                    Padding(
+                      key: ValueKey(_isSatelliteMode
+                          ? 'map-style-street'
+                          : 'map-style-street-selected'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.map_outlined, size: 18),
+                          SizedBox(width: 6),
+                          Text('Map'),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      key: ValueKey(_isSatelliteMode
+                          ? 'map-style-satellite-selected'
+                          : 'map-style-satellite'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.satellite_alt_outlined, size: 18),
+                          SizedBox(width: 6),
+                          Text('Satellite'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          if (_isSatelliteMode && _hasSatelliteTileError)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(
+                child: Material(
+                  key: const ValueKey('satellite-tile-error'),
+                  elevation: 4,
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off, color: Color(0xFF0B351E)),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text('Satellite imagery could not load.'),
+                        ),
+                        TextButton(
+                          onPressed: () => _selectMapStyle(false),
+                          child: const Text('Use map'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Floating Map Action Buttons (Recenter & Zoom)
           if (isuCampusBuildings.isEmpty)

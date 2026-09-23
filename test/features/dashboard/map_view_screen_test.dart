@@ -7,8 +7,95 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:isu_camp_app/features/dashboard/screens/map_view_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+  });
+
+  testWidgets('map style selection is available and survives screen reopen',
+      (tester) async {
+    final tileBytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(home: MapViewScreen()));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('map-style-street-selected')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('map-style-satellite')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('map-style-satellite')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getBool('map_satellite_enabled'), isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpWidget(const MaterialApp(home: MapViewScreen()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const ValueKey('map-style-satellite-selected')),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+        () => MockClient((request) => Future.value(http.Response.bytes(
+              tileBytes,
+              200,
+              headers: {'content-type': 'image/png'},
+            ))));
+  });
+
+  testWidgets('satellite tile errors offer a switch back to the map',
+      (tester) async {
+    final tileBytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    final requestedHosts = <String>{};
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(home: MapViewScreen()));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('map-style-satellite')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 8));
+
+      expect(requestedHosts, contains('server.arcgisonline.com'));
+      expect(
+          find.byKey(const ValueKey('satellite-tile-error')), findsOneWidget);
+      await tester.tap(find.text('Use map'));
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('map-style-street-selected')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('satellite-tile-error')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+        () => MockClient((request) {
+              requestedHosts.add(request.url.host);
+              if (request.url.host == 'server.arcgisonline.com') {
+                return Future.value(http.Response('Unavailable', 503));
+              }
+              if (request.url.path.contains('buildings')) {
+                return Future.value(http.Response(
+                    jsonEncode({'buildings': []}), 200,
+                    headers: {'content-type': 'application/json'}));
+              }
+              return Future.value(http.Response.bytes(tileBytes, 200,
+                  headers: {'content-type': 'image/png'}));
+            }));
+  });
+
   testWidgets('controls remain after buildings finish loading', (tester) async {
     final response = Completer<http.Response>();
     final tileBytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
