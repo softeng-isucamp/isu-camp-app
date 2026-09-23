@@ -35,3 +35,11 @@ double? routeHeading(List<LatLng> points, LatLng position) {
   }
   return null;
 }
+
+double smoothHeading(double? current, double target, {double factor = 0.22}) {
+  final normalizedTarget = (target % 360 + 360) % 360;
+  if (current == null || !current.isFinite) return normalizedTarget;
+  final safeFactor = factor.clamp(0.0, 1.0);
+  final shortestDelta = (normalizedTarget - current + 540) % 360 - 180;
+  return (current + shortestDelta * safeFactor + 360) % 360;
+}

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -9,6 +11,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
+import '../models/building_marker_style.dart';
 import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
 import '../models/navigation_heading.dart';
@@ -16,6 +19,15 @@ import '../services/campus_service.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/navigation_sheets.dart';
 import 'user_info_screen.dart';
+
+const Color navigationRouteBlue = Color(0xFF2563EB);
+const double _initialCampusZoom = 16.8;
+
+double buildingLabelOpacity(double zoom) =>
+    ((zoom - 17.2) / 1.0).clamp(0.0, 1.0);
+
+double buildingIconOpacity(double zoom, {bool isSelected = false}) =>
+    isSelected ? 1.0 : ((zoom - 15.5) / 0.8).clamp(0.0, 1.0);
 
 final LatLngBounds isuEchagueBounds = LatLngBounds(
   const LatLng(16.7120, 121.6830),
@@ -50,6 +62,7 @@ class MapViewScreen extends StatefulWidget {
 class _MapViewScreenState extends State<MapViewScreen> {
   final TextEditingController _searchController = TextEditingController();
   final MapController _mapController = MapController();
+  final ValueNotifier<double> _mapZoom = ValueNotifier(_initialCampusZoom);
 
   NavigationUiState _navigationState = NavigationUiState.idle;
   CampusBuilding? _selectedBuilding;
@@ -71,7 +84,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
   bool _isLoadingBuildings = true;
   String? _buildingsError;
   StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<CompassEvent>? _compassSubscription;
   double? _movementHeading;
+  double? _deviceHeading;
+  DateTime? _lastNavigationCameraUpdate;
+  bool _followNavigationCamera = true;
   int _previewStepIndex = 0;
   String? _historySessionId;
   Future<void> _historyWriteQueue = Future<void>.value();
@@ -184,7 +201,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
         color: Colors.white,
         shape: BoxShape.circle,
         border: Border.all(
-          color: const Color(0xFF22C55E),
+          color: navigationRouteBlue,
           width: 3,
         ),
         boxShadow: const [
@@ -195,18 +212,20 @@ class _MapViewScreenState extends State<MapViewScreen> {
       child: isWalking
           ? Transform.rotate(
               angle: ((_navigationState == NavigationUiState.navigating
-                          ? _movementHeading
+                          ? (_followNavigationCamera
+                              ? 0
+                              : _deviceHeading ?? _movementHeading)
                           : null) ??
                       routeHeading(_routePoints, _selectedOrigin.coordinate) ??
                       0) *
                   math.pi /
                   180,
               child: const Icon(Icons.navigation,
-                  color: Color(0xFF0F751B), size: 26),
+                  color: navigationRouteBlue, size: 26),
             )
           : Icon(
               routeModeIcon(_selectedTransportMode),
-              color: const Color(0xFF0F751B),
+              color: navigationRouteBlue,
               size: 22,
             ),
     );
@@ -249,6 +268,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void dispose() {
     _searchController.dispose();
     _positionSubscription?.cancel();
+    _compassSubscription?.cancel();
+    _mapZoom.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -294,8 +315,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
       if (!mounted) return;
       _positionSubscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 2,
         ),
       ).listen(_updateCurrentPosition);
     } catch (_) {
@@ -341,9 +362,79 @@ class _MapViewScreenState extends State<MapViewScreen> {
     if (_navigationState == NavigationUiState.navigating &&
         isuEchagueBounds.contains(_currentUserLocation!)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _mapController.move(_currentUserLocation!, 18.5);
+        if (mounted) _updateNavigationCamera(force: true);
       });
     }
+  }
+
+  void _startCompassTracking() {
+    if (_compassSubscription != null ||
+        kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return;
+    }
+    final events = FlutterCompass.events;
+    if (events == null) return;
+    _compassSubscription = events.listen(
+      (event) {
+        final heading = event.heading;
+        if (!mounted || heading == null || !heading.isFinite || heading < 0) {
+          return;
+        }
+        final smoothed = smoothHeading(_deviceHeading, heading);
+        if (_followNavigationCamera) {
+          _deviceHeading = smoothed;
+        } else {
+          setState(() => _deviceHeading = smoothed);
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _updateNavigationCamera();
+        });
+      },
+      onError: (_) {
+        _compassSubscription?.cancel();
+        _compassSubscription = null;
+      },
+    );
+  }
+
+  void _stopCompassTracking() {
+    _compassSubscription?.cancel();
+    _compassSubscription = null;
+    _deviceHeading = null;
+    _lastNavigationCameraUpdate = null;
+  }
+
+  void _updateNavigationCamera({bool force = false}) {
+    final location = _currentUserLocation;
+    if (!mounted ||
+        location == null ||
+        _navigationState != NavigationUiState.navigating ||
+        !_followNavigationCamera) {
+      return;
+    }
+    final now = DateTime.now();
+    if (!force &&
+        _lastNavigationCameraUpdate != null &&
+        now.difference(_lastNavigationCameraUpdate!) <
+            const Duration(milliseconds: 90)) {
+      return;
+    }
+    _lastNavigationCameraUpdate = now;
+    final heading = _deviceHeading ??
+        _movementHeading ??
+        routeHeading(_routePoints, location) ??
+        0;
+    _mapController.moveAndRotate(location, 18.5, heading);
+  }
+
+  void _resumeNavigationFollowing() {
+    setState(() => _followNavigationCamera = true);
+    _startCompassTracking();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateNavigationCamera(force: true);
+    });
   }
 
   Future<void> _useCurrentLocationAsOrigin() async {
@@ -372,14 +463,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   void _cancelDirections() {
+    _stopCompassTracking();
     setState(() {
       _navigationState = NavigationUiState.idle;
       _walkingRoute = null;
       _selectedRoom = null;
       _historySessionId = null;
+      _followNavigationCamera = true;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _mapController.move(isuCampusCenter, 16.8);
+      if (mounted) _mapController.moveAndRotate(isuCampusCenter, 16.8, 0);
     });
   }
 
@@ -417,11 +510,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
     if (_selectedOrigin.type != NavigationOriginType.currentLocation) return;
     FocusScope.of(context).unfocus();
     _recordHistory(NavigationHistoryStatus.navigationStarted);
-    setState(() => _navigationState = NavigationUiState.navigating);
+    setState(() {
+      _navigationState = NavigationUiState.navigating;
+      _followNavigationCamera = true;
+    });
+    _startCompassTracking();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted)
-        _mapController.move(
-            _walkingRoute?.points.first ?? _selectedOrigin.coordinate, 18.5);
+      if (mounted) _updateNavigationCamera(force: true);
     });
   }
 
@@ -567,7 +662,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: isuCampusCenter,
-                initialZoom: 16.8,
+                initialZoom: _initialCampusZoom,
                 minZoom: 15.5,
                 maxZoom: 19.5,
                 // Desktop viewports can be wider than the campus bounds.
@@ -580,6 +675,17 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     setState(() {
                       _navigationState = NavigationUiState.idle;
                     });
+                  }
+                },
+                onPositionChanged: (camera, hasGesture) {
+                  final zoom = camera.zoom;
+                  if ((_mapZoom.value - zoom).abs() > 0.001) {
+                    _mapZoom.value = zoom;
+                  }
+                  if (hasGesture &&
+                      _navigationState == NavigationUiState.navigating &&
+                      _followNavigationCamera) {
+                    setState(() => _followNavigationCamera = false);
                   }
                 },
               ),
@@ -621,102 +727,138 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       Polyline(
                         points: _routePoints,
                         strokeWidth: 5.0,
-                        color: const Color(0xFF0F751B),
+                        color: navigationRouteBlue,
                         borderColor: Colors.white,
                         borderStrokeWidth: 2.0,
                       ),
                     ],
                   ),
 
-                // Building Markers with Visual Name Badges on the Map
-                MarkerLayer(
-                  markers: filteredBuildings.map((building) {
-                    final isSelected = _selectedBuilding?.id == building.id;
-                    return Marker(
-                      point: building.coordinate,
-                      width: 140,
-                      height: 75,
-                      child: GestureDetector(
-                        onTap: () => _selectBuildingAndShowDetails(building),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Pin Icon
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
-                              padding: EdgeInsets.all(isSelected ? 7 : 5),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFFECC700)
-                                    : (building.isParking
-                                        ? const Color(0xFF1E88E5)
-                                        : const Color(0xFF0F751B)),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: isSelected ? 2.5 : 2.0,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
+                // Building names fade first; icons fade at the farthest zoom.
+                ValueListenableBuilder<double>(
+                  valueListenable: _mapZoom,
+                  builder: (context, zoom, _) => MarkerLayer(
+                    markers: filteredBuildings.map((building) {
+                      final isSelected = _selectedBuilding?.id == building.id;
+                      final markerStyle = buildingMarkerStyle(building);
+                      final opacity =
+                          buildingIconOpacity(zoom, isSelected: isSelected);
+                      return Marker(
+                        key: ValueKey('building-marker-${building.id}'),
+                        point: building.coordinate,
+                        width: 38,
+                        height: 38,
+                        child: IgnorePointer(
+                          ignoring: opacity == 0,
+                          child: ExcludeSemantics(
+                            excluding: opacity == 0,
+                            child: AnimatedOpacity(
+                              key: ValueKey('building-icon-${building.id}'),
+                              opacity: opacity,
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              child: Semantics(
+                                button: true,
+                                label: building.name,
+                                child: Tooltip(
+                                  message: building.name,
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        _selectBuildingAndShowDetails(building),
+                                    child: Center(
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 220),
+                                        width: isSelected ? 32 : 28,
+                                        height: isSelected ? 32 : 28,
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? const Color(0xFFECC700)
+                                              : markerStyle.color,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: isSelected ? 2.5 : 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.24),
+                                              blurRadius: isSelected ? 6 : 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          markerStyle.icon,
+                                          color: isSelected
+                                              ? Colors.black87
+                                              : Colors.white,
+                                          size: isSelected ? 18 : 16,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: Icon(
-                                building.isParking
-                                    ? Icons.local_parking
-                                    : Icons.school,
-                                color:
-                                    isSelected ? Colors.black87 : Colors.white,
-                                size: isSelected ? 20 : 16,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            // Building Label Pill on Map
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFF0F4D20)
-                                    : Colors.white.withValues(alpha: 0.95),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFFECC700)
-                                      : Colors.grey.shade300,
-                                  width: 1,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                building.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : const Color(0xFF0F4D20),
                                 ),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+                // Labels appear progressively as the user zooms in. They never
+                // take taps away from the icon markers underneath.
+                ValueListenableBuilder<double>(
+                  valueListenable: _mapZoom,
+                  builder: (context, zoom, _) => MarkerLayer(
+                    markers: filteredBuildings.map((building) {
+                      return Marker(
+                        point: building.coordinate,
+                        width: 120,
+                        height: 25,
+                        alignment: Alignment.topCenter,
+                        child: IgnorePointer(
+                          child: ExcludeSemantics(
+                            child: AnimatedOpacity(
+                              key: ValueKey('building-label-${building.id}'),
+                              opacity: buildingLabelOpacity(zoom),
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              child: Transform.translate(
+                                offset: const Offset(0, 18),
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.94),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: Text(
+                                      building.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF0B351E),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
 
                 if (_showsTransportOriginMarker)
@@ -788,7 +930,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF0F751B),
+                                color: navigationRouteBlue,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: Colors.white,
@@ -812,7 +954,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             ),
                             const Icon(
                               Icons.arrow_drop_down,
-                              color: Color(0xFF0F751B),
+                              color: navigationRouteBlue,
                               size: 18,
                             ),
                           ],
@@ -1519,10 +1661,36 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 onEndRoute: _confirmEndNavigation,
                 onSimulateArrival: () {
                   _recordHistory(NavigationHistoryStatus.completed);
+                  _stopCompassTracking();
                   setState(() {
                     _navigationState = NavigationUiState.arrived;
                   });
                 },
+              ),
+            ),
+
+          if (_navigationState == NavigationUiState.navigating)
+            Positioned(
+              right: 16,
+              top: topPadding + 150,
+              child: FloatingActionButton.small(
+                heroTag: 'btn_follow_navigation',
+                tooltip: _followNavigationCamera
+                    ? 'Following your direction'
+                    : 'Recenter and follow direction',
+                backgroundColor: _followNavigationCamera
+                    ? navigationRouteBlue
+                    : Colors.white,
+                foregroundColor: _followNavigationCamera
+                    ? Colors.white
+                    : navigationRouteBlue,
+                onPressed: _resumeNavigationFollowing,
+                child: Icon(
+                  _followNavigationCamera
+                      ? Icons.navigation
+                      : Icons.my_location,
+                  size: 21,
+                ),
               ),
             ),
 
