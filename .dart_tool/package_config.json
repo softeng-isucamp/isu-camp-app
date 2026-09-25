@@ -104,6 +104,12 @@
       "languageVersion": "3.10"
     },
     {
+      "name": "flutter_compass",
+      "rootUri": "file:///C:/Users/justine%20asuncion/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_compass-0.8.1",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
       "name": "flutter_lints",
       "rootUri": "file:///C:/Users/justine%20asuncion/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_lints-6.0.0",
       "packageUri": "lib/",

@@ -10,6 +10,7 @@
         "cupertino_icons",
         "device_preview",
         "flutter",
+        "flutter_compass",
         "flutter_map",
         "geolocator",
         "google_fonts",
@@ -92,6 +93,13 @@
         "polylabel",
         "proj4dart",
         "vector_math"
+      ]
+    },
+    {
+      "name": "flutter_compass",
+      "version": "0.8.1",
+      "dependencies": [
+        "flutter"
       ]
     },
     {
