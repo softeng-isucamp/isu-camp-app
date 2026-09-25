@@ -38,7 +38,33 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(tester.takeException(), isNull);
       expect(find.text('Loading campus locations...'), findsNothing);
-      expect(find.text('Test Building'), findsOneWidget);
+      final buildingLabel = find.byKey(const ValueKey('building-label-1'));
+      final buildingIcon = find.byKey(const ValueKey('building-icon-1'));
+      expect(tester.widget<AnimatedOpacity>(buildingLabel).opacity, 0);
+      expect(tester.widget<AnimatedOpacity>(buildingIcon).opacity, 1);
+      expect(find.byKey(const ValueKey('building-marker-1')), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<AnimatedOpacity>(buildingLabel).opacity,
+          greaterThan(0));
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<AnimatedOpacity>(buildingLabel).opacity, 1);
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(
+          tester.widget<AnimatedOpacity>(buildingLabel).opacity, lessThan(1));
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<AnimatedOpacity>(buildingLabel).opacity, 0);
+      expect(tester.widget<AnimatedOpacity>(buildingIcon).opacity, 1);
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<AnimatedOpacity>(buildingIcon).opacity,
+          inExclusiveRange(0, 1));
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<AnimatedOpacity>(buildingIcon).opacity, 0);
       expect(find.byType(TextField), findsOneWidget);
       expect(tester.element(find.byType(TextField)), same(searchElement));
       expect(find.text('All'), findsOneWidget);
@@ -48,9 +74,7 @@ void main() {
         () => MockClient((request) {
               if (request.url.path == '/campus/buildings')
                 return response.future;
-              return Future.value(http.Response.bytes(
-                  tileBytes,
-                  200,
+              return Future.value(http.Response.bytes(tileBytes, 200,
                   headers: {'content-type': 'image/png'}));
             }));
   });

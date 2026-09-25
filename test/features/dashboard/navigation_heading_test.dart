@@ -28,4 +28,10 @@ void main() {
     expect(routeHeading([point, point, const LatLng(0, 1)], point),
         closeTo(90, .01));
   });
+
+  test('heading smoothing follows the shortest path across north', () {
+    expect(smoothHeading(350, 10, factor: .5), closeTo(0, .01));
+    expect(smoothHeading(10, 350, factor: .5), closeTo(0, .01));
+    expect(smoothHeading(null, 725), closeTo(5, .01));
+  });
 }
