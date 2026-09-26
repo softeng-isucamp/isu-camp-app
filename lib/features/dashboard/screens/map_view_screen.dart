@@ -6,6 +6,7 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,7 +18,12 @@ import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
 import '../models/navigation_heading.dart';
 import '../services/campus_service.dart';
+import '../services/campus_pack_service.dart';
+import '../services/offline_map_tile_bundle.dart';
+import '../services/offline_campus_router.dart';
 import '../services/navigation_history_service.dart';
+import '../services/smart_search_model_pack_service.dart';
+import '../services/smart_search_service.dart';
 import '../widgets/navigation_sheets.dart';
 import 'user_info_screen.dart';
 
@@ -27,6 +33,11 @@ const String _mapSatellitePreferenceKey = 'map_satellite_enabled';
 const String _streetTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const String _satelliteTileUrl =
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+typedef OfflineMapTileBundleLoader = Future<OfflineMapTileBundle?> Function();
+
+Future<OfflineMapTileBundle?> _loadBundledOfflineMapTiles() =>
+    OfflineMapTileBundle.load();
 
 double buildingLabelOpacity(double zoom) =>
     ((zoom - 17.2) / 1.0).clamp(0.0, 1.0);
@@ -58,7 +69,12 @@ enum NavigationUiState {
 }
 
 class MapViewScreen extends StatefulWidget {
-  const MapViewScreen({super.key});
+  final OfflineMapTileBundleLoader offlineMapTileBundleLoader;
+
+  const MapViewScreen({
+    super.key,
+    this.offlineMapTileBundleLoader = _loadBundledOfflineMapTiles,
+  });
 
   @override
   State<MapViewScreen> createState() => _MapViewScreenState();
@@ -91,6 +107,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
   bool _isSatelliteMode = false;
   bool _isMapStylePreferenceLoaded = false;
   bool _hasSatelliteTileError = false;
+  bool _hasNetworkConnection = false;
+  bool _hasOfflineCampusPack = false;
+  OfflineMapTileBundle? _offlineMapTileBundle;
+  List<List<LatLng>> _offlinePathways = const [];
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<CompassEvent>? _compassSubscription;
   double? _movementHeading;
@@ -100,6 +121,14 @@ class _MapViewScreenState extends State<MapViewScreen> {
   int _previewStepIndex = 0;
   String? _historySessionId;
   Future<void> _historyWriteQueue = Future<void>.value();
+  final SmartSearchModelPackService _smartModelPackService =
+      SmartSearchModelPackService();
+  final SmartSearchService _smartSearchService = SmartSearchService();
+  Timer? _smartSearchDebounce;
+  bool _smartModelReady = false;
+  bool _smartSearchEnabled = false;
+  List<CampusBuilding>? _smartRankedBuildings;
+  String _smartRankedQuery = '';
 
   bool get _isNavigationActive =>
       _navigationState == NavigationUiState.routePreview ||
@@ -243,12 +272,130 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void initState() {
     super.initState();
     unawaited(_loadMapStylePreference());
+    unawaited(_initializeConnectivity());
+    unawaited(_loadOfflineMapData());
+    unawaited(_loadOfflineMapTileBundle());
+    unawaited(_loadSmartSearchModel());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _loadBuildings();
       _initializeCurrentLocation();
     });
   }
+
+  Future<void> _initializeConnectivity() async {
+    try {
+      final connectivity = Connectivity();
+      final initial = await connectivity.checkConnectivity();
+      if (mounted) {
+        setState(() => _hasNetworkConnection =
+            initial.any((result) => result != ConnectivityResult.none));
+        if (_hasNetworkConnection) {
+          unawaited(NavigationHistoryService.syncPending().catchError((_) {}));
+        }
+      }
+      if (!mounted) return;
+      _connectivitySubscription = connectivity.onConnectivityChanged.listen(
+        (results) {
+          if (!mounted) return;
+          final connected =
+              results.any((result) => result != ConnectivityResult.none);
+          setState(() => _hasNetworkConnection = connected);
+          if (connected) {
+            unawaited(
+                NavigationHistoryService.syncPending().catchError((_) {}));
+          }
+        },
+      );
+    } catch (_) {
+      if (mounted) setState(() => _hasNetworkConnection = true);
+    }
+  }
+
+  Future<void> _loadOfflineMapData() async {
+    final pack = await CampusPackService().installed();
+    if (!mounted || pack == null) return;
+    final graph = pack.routingGraph;
+    setState(() {
+      _hasOfflineCampusPack = true;
+      _offlinePathways =
+          graph == null ? const [] : OfflineCampusRouter.mapPathways(graph);
+    });
+  }
+
+  Future<void> _loadOfflineMapTileBundle() async {
+    final bundle = await widget.offlineMapTileBundleLoader();
+    if (!mounted || bundle == null) return;
+    setState(() => _offlineMapTileBundle = bundle);
+  }
+
+  Future<void> _loadSmartSearchModel() async {
+    try {
+      final pack = await _smartModelPackService.installed();
+      if (pack == null) {
+        await _smartSearchService.close();
+        if (mounted) {
+          setState(() {
+            _smartModelReady = false;
+            _smartSearchEnabled = false;
+            _smartRankedBuildings = null;
+          });
+        }
+        return;
+      }
+      await _smartSearchService.load(pack);
+      if (!mounted) return;
+      setState(() => _smartModelReady = true);
+      _scheduleSmartSearch();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _smartModelReady = false;
+          _smartSearchEnabled = false;
+          _smartRankedBuildings = null;
+        });
+      }
+    }
+  }
+
+  void _scheduleSmartSearch() {
+    _smartSearchDebounce?.cancel();
+    final query = _searchController.text.trim();
+    if (!_smartSearchEnabled || !_smartModelReady || query.isEmpty) {
+      if (mounted) setState(() => _smartRankedBuildings = null);
+      return;
+    }
+    _smartSearchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final results = await _smartSearchService.search(
+        query: query,
+        catalog: List<CampusBuilding>.of(isuCampusBuildings),
+        deterministicFallback: _literalSearch,
+      );
+      if (mounted &&
+          _smartSearchEnabled &&
+          _searchController.text.trim() == query) {
+        setState(() {
+          _smartRankedQuery = query;
+          _smartRankedBuildings = results.take(5).toList();
+        });
+      }
+    });
+  }
+
+  List<CampusBuilding> _literalSearch(String query) =>
+      isuCampusBuildings.where((building) {
+        final normalized = query.toLowerCase().trim();
+        return normalized.isEmpty ||
+            building.name.toLowerCase().contains(normalized) ||
+            building.acronym.toLowerCase().contains(normalized) ||
+            building.category.toLowerCase().contains(normalized) ||
+            building.description.toLowerCase().contains(normalized) ||
+            building.keywords.toLowerCase().contains(normalized) ||
+            building.rooms.any((room) =>
+                room.title.toLowerCase().contains(normalized) ||
+                room.description.toLowerCase().contains(normalized) ||
+                room.keywords.toLowerCase().contains(normalized));
+      }).toList();
 
   Future<void> _loadMapStylePreference() async {
     try {
@@ -290,15 +437,17 @@ class _MapViewScreenState extends State<MapViewScreen> {
     setState(() {
       _isLoadingBuildings = true;
       _buildingsError = null;
-      isuCampusBuildings.clear();
     });
     try {
       final buildings = await CampusService.fetchBuildings();
       if (!mounted) return;
       setState(() {
-        isuCampusBuildings.addAll(buildings);
+        isuCampusBuildings
+          ..clear()
+          ..addAll(buildings);
         _isLoadingBuildings = false;
       });
+      _scheduleSmartSearch();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -311,9 +460,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   @override
   void dispose() {
+    _smartSearchDebounce?.cancel();
+    unawaited(_smartSearchService.close());
+    unawaited(_smartModelPackService.close());
     _searchController.dispose();
     _positionSubscription?.cancel();
     _compassSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _mapZoom.dispose();
     _mapController.dispose();
     super.dispose();
@@ -528,8 +681,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final route = _walkingRoute;
     if (destination == null || route == null || _historySessionId != null)
       return;
-    final token = UserSession.accessToken;
-    if (token == null) {
+    final sessionIdentity = UserSession.sessionIdentity;
+    if (sessionIdentity == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
               Text('Please log in again to save your navigation history.')));
@@ -539,11 +692,20 @@ class _MapViewScreenState extends State<MapViewScreen> {
         '${DateTime.now().microsecondsSinceEpoch}_${destination.id}';
     _historySessionId = sessionId;
     final roomId = _selectedRoom?.id;
-    _historyWriteQueue = _historyWriteQueue
-        .then((_) => NavigationHistoryService.record(
-            buildingId: destination.id, roomId: roomId, token: token))
-        .catchError((Object error) {
-      if (!mounted || UserSession.accessToken != token) return;
+    final roomName = _selectedRoom?.title;
+    _historyWriteQueue = _historyWriteQueue.then((_) async {
+      await NavigationHistoryService.record(
+          buildingId: destination.id,
+          roomId: roomId,
+          destinationName: destination.name,
+          destinationAcronym: destination.acronym,
+          roomName: roomName,
+          sessionIdentity: sessionIdentity);
+      if (_hasNetworkConnection) {
+        await NavigationHistoryService.syncPending();
+      }
+    }).catchError((Object error) {
+      if (!mounted || UserSession.sessionIdentity != sessionIdentity) return;
       if (_historySessionId == sessionId) _historySessionId = null;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
@@ -623,16 +785,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   List<CampusBuilding> _getFilteredBuildings() {
-    return isuCampusBuildings.where((b) {
-      final query = _searchController.text.toLowerCase().trim();
-      final matchesQuery = query.isEmpty ||
-          b.name.toLowerCase().contains(query) ||
-          b.acronym.toLowerCase().contains(query) ||
-          b.category.toLowerCase().contains(query) ||
-          b.rooms.any((r) => r.title.toLowerCase().contains(query));
-
-      if (!matchesQuery) return false;
-
+    final query = _searchController.text.trim();
+    final modelResults = _smartSearchEnabled &&
+            _smartRankedQuery == query &&
+            _smartRankedBuildings != null
+        ? _smartRankedBuildings
+        : null;
+    return (modelResults ?? _literalSearch(query)).where((b) {
       if (_selectedCategoryFilter == 'Colleges') {
         return !b.isParking;
       } else if (_selectedCategoryFilter == 'Parkings') {
@@ -695,6 +854,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
     final filteredBuildings = _getFilteredBuildings();
+    final activeOfflineTileLayer =
+        _offlineMapTileBundle?[_isSatelliteMode ? 'satellite' : 'osm'];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F5),
@@ -706,6 +867,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
             child: FlutterMap(
               mapController: _mapController,
               options: MapOptions(
+                backgroundColor: const Color(0xFFE8E7DE),
                 initialCenter: isuCampusCenter,
                 initialZoom: _initialCampusZoom,
                 minZoom: 15.5,
@@ -735,17 +897,45 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 },
               ),
               children: [
-                // Street and satellite tiles share the same campus overlays.
-                TileLayer(
-                  key: ValueKey(
-                      _isSatelliteMode ? 'satellite-tiles' : 'street-tiles'),
-                  urlTemplate:
-                      _isSatelliteMode ? _satelliteTileUrl : _streetTileUrl,
-                  userAgentPackageName: 'com.isucamp.app',
-                  errorTileCallback: _isSatelliteMode
-                      ? (_, __, ___) => _recordSatelliteTileError()
-                      : null,
-                ),
+                // Never request remote imagery while the device is offline.
+                if (_hasNetworkConnection)
+                  TileLayer(
+                    key: ValueKey(
+                        _isSatelliteMode ? 'satellite-tiles' : 'street-tiles'),
+                    urlTemplate:
+                        _isSatelliteMode ? _satelliteTileUrl : _streetTileUrl,
+                    userAgentPackageName: 'com.isucamp.app',
+                    errorTileCallback: _isSatelliteMode
+                        ? (_, __, ___) => _recordSatelliteTileError()
+                        : null,
+                  ),
+
+                if (!_hasNetworkConnection && activeOfflineTileLayer != null)
+                  TileLayer(
+                    key: ValueKey('offline-${activeOfflineTileLayer.id}-tiles'),
+                    urlTemplate: _offlineMapTileBundle!
+                        .tilePath(activeOfflineTileLayer.id),
+                    tileProvider: FileTileProvider(),
+                    minNativeZoom: activeOfflineTileLayer.minZoom,
+                    maxNativeZoom: activeOfflineTileLayer.maxZoom,
+                    maxZoom: 19.5,
+                    errorTileCallback: _isSatelliteMode
+                        ? (_, __, ___) => _recordSatelliteTileError()
+                        : null,
+                  ),
+
+                if (!_hasNetworkConnection && _offlinePathways.isNotEmpty)
+                  PolylineLayer(
+                    polylines: _offlinePathways
+                        .where((path) => path.length > 1)
+                        .map((path) => Polyline(
+                              points: path,
+                              color: const Color(0xFF77836F),
+                              strokeWidth: 3,
+                              pattern: const StrokePattern.dotted(),
+                            ))
+                        .toList(),
+                  ),
 
                 PolygonLayer(
                   polygons: [
@@ -1051,19 +1241,58 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     ],
                   ),
 
-                RichAttributionWidget(
-                  attributions: [
-                    TextSourceAttribution(
-                      _isSatelliteMode
-                          ? 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community'
-                          : 'OpenStreetMap contributors',
-                      onTap: () {},
-                    ),
-                  ],
-                ),
+                if (_hasNetworkConnection || activeOfflineTileLayer != null)
+                  RichAttributionWidget(
+                    attributions: [
+                      TextSourceAttribution(
+                        _hasNetworkConnection
+                            ? (_isSatelliteMode
+                                ? 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community'
+                                : 'OpenStreetMap contributors')
+                            : activeOfflineTileLayer!.attribution,
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
+
+          if (!_hasNetworkConnection &&
+              (_hasOfflineCampusPack || _offlineMapTileBundle != null))
+            Positioned(
+              left: 16,
+              right: 84,
+              top: topPadding + 275,
+              child: SafeArea(
+                child: Material(
+                  color: const Color(0xFFEAF2E9),
+                  elevation: 2,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off,
+                            size: 18, color: Color(0xFF174A2F)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            activeOfflineTileLayer == null
+                                ? 'Offline campus map: buildings and walking paths. This map style has no bundled tiles, so the vector map is shown.'
+                                : _isSatelliteMode
+                                    ? 'Offline satellite imagery, buildings, and walking paths.'
+                                    : 'Offline OSM basemap, buildings, and walking paths.',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           if (!_isNavigationActive)
             Positioned(
@@ -1326,7 +1555,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               onTap: () async {
                                 await _historyWriteQueue;
                                 if (!context.mounted) return;
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => UserInfoScreen(
@@ -1351,6 +1580,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                     ),
                                   ),
                                 );
+                                if (mounted) unawaited(_loadSmartSearchModel());
                               },
                               child: Container(
                                 padding: const EdgeInsets.all(6),
@@ -1412,7 +1642,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
                           Expanded(
                             child: TextField(
                               controller: _searchController,
-                              onChanged: (val) => setState(() {}),
+                              onChanged: (_) {
+                                setState(() => _smartRankedBuildings = null);
+                                _scheduleSmartSearch();
+                              },
                               style: GoogleFonts.montserrat(
                                 color: Colors.white,
                                 fontSize: 13,
@@ -1435,6 +1668,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               onTap: () {
                                 _searchController.clear();
                                 setState(() {});
+                                _scheduleSmartSearch();
                               },
                               child: const Icon(
                                 Icons.close,
@@ -1442,6 +1676,38 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                 size: 18,
                               ),
                             ),
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: _smartModelReady
+                                ? 'Experimental Smart Search (tap to switch)'
+                                : 'Download the test Smart Search model in Offline Campus Map',
+                            child: InkWell(
+                              key: const ValueKey('smart-search-toggle'),
+                              onTap: () {
+                                if (!_smartModelReady) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Download the test Smart Search model under Profile → Offline Campus Map.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setState(() {
+                                  _smartSearchEnabled = !_smartSearchEnabled;
+                                  _smartRankedBuildings = null;
+                                });
+                                _scheduleSmartSearch();
+                              },
+                              child: Icon(
+                                Icons.auto_awesome,
+                                color: _smartSearchEnabled
+                                    ? const Color(0xFFECC700)
+                                    : Colors.white70,
+                                size: 20,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1544,12 +1810,30 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               ),
                               subtitle: Builder(
                                 builder: (context) {
+                                  if (_smartSearchEnabled &&
+                                      _smartRankedBuildings != null) {
+                                    return Text(
+                                      'Experimental model suggestion • ${bldg.acronym.isEmpty ? bldg.category : bldg.acronym}',
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 11,
+                                        color: const Color(0xFF8A6500),
+                                      ),
+                                    );
+                                  }
                                   final query = _searchController.text
                                       .toLowerCase()
                                       .trim();
                                   final matchedRooms = bldg.rooms
                                       .where((r) =>
-                                          r.title.toLowerCase().contains(query))
+                                          r.title
+                                              .toLowerCase()
+                                              .contains(query) ||
+                                          r.description
+                                              .toLowerCase()
+                                              .contains(query) ||
+                                          r.keywords
+                                              .toLowerCase()
+                                              .contains(query))
                                       .toList();
 
                                   if (query.isNotEmpty &&
@@ -1592,7 +1876,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
             ),
 
           // 3. Bottom Sheet Overlay State Machine
-          if (_locationStatus != null && !_isNavigationActive)
+          if (_locationStatus != null &&
+              !_isNavigationActive &&
+              _searchController.text.trim().isEmpty)
             Positioned(
               top: topPadding + 170,
               left: 16,

@@ -4,6 +4,7 @@
 *.pyc
 *.swp
 .DS_Store
+.env
 .atom/
 .buildlog/
 .history
@@ -29,6 +30,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+.scratch/pre-smart-search-test.apk
 android/build/
 android/app/build/
 android/.gradle/

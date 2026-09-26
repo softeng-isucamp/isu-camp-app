@@ -20,6 +20,13 @@ dependencies:
   latlong2: ^0.9.1
   http: ^1.6.0
   shared_preferences: ^2.5.3
+  crypto: ^3.0.6
+  flutter_secure_storage: ^11.2.0
+  connectivity_plus: ^6.1.5
+  path_provider: ^2.1.6
+  archive: ^4.0.7
+  flutter_onnxruntime: ^1.8.5
+  dart_sentencepiece_tokenizer: ^1.4.1
 
 dev_dependencies:
   flutter_test:
@@ -32,3 +39,4 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/offline_tiles/campus_tiles.zip

@@ -9,9 +9,29 @@ The existing public.UserHistory table is used without migrations:
 Set SESSION_SECRET to a cryptographically random value of at least 32 characters
 in server/.env and in the deployment environment. Use the same secret for all
 backend workers. Never commit it. A local secret has been configured in the ignored
-.env file. Restart FastAPI, then log in again (or sign up) to receive a session.
-Sessions expire after 24 hours. The app holds the token in memory and clears it
-on logout; it does not persist the token in shared_preferences.
+.env file.
+
+Before deploying backend or app updates, apply both SQL migrations in order in
+the Supabase SQL editor: `migrations/001_history_refresh_sessions.sql`, then
+`migrations/002_history_idempotency.sql`. The first creates the private
+HistoryRefreshSession table and atomic token-rotation RPC. The second adds a
+nullable UUID client event key and a unique index scoped to the history owner;
+existing rows and older clients remain valid. Deploy the backend after both
+migrations, then deploy the app. Login and signup
+return a 24-hour access token plus an opaque refresh token. Refresh rotates the
+token and extends its lifetime by 90 days from use. The server stores only SHA-256
+hashes. POST `/auth/refresh` accepts `refresh_token`; POST `/auth/logout` revokes it.
+Use the same configured `SUPABASE_KEY` service-role key across workers. Existing
+sessions issued before this change have no refresh credential, so users need to
+log in once after the backend and app update.
+
+The app should keep the credentials in its secure session storage, refresh the
+access token after a 401 or before its 24-hour expiry, and call revoke on logout.
+
+Queued History writes should send their stable UUID as `clientEventId` with each
+retry. The server returns the same history `id` for duplicate submissions by the
+same user. Clients that omit the field retain the previous create-each-request
+behavior.
 
 GET /history?offset=0 returns pages of 100, newest first.
 POST /history accepts buildingId and optional locationId.

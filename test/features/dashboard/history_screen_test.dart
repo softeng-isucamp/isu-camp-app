@@ -9,8 +9,21 @@ import 'package:isu_camp_app/features/dashboard/data/campus_dataset.dart';
 import 'package:isu_camp_app/features/dashboard/models/campus_models.dart';
 import 'package:isu_camp_app/features/dashboard/models/navigation_history.dart';
 import 'package:isu_camp_app/features/dashboard/screens/user_info_screen.dart';
+import 'package:isu_camp_app/features/dashboard/services/history_local_store.dart';
+import 'package:isu_camp_app/features/dashboard/services/navigation_history_service.dart';
+
+class MemoryHistoryStore implements HistoryLocalStore {
+  final values = <String, String>{};
+  @override
+  Future<String?> read(String account) async => values[account];
+  @override
+  Future<void> write(String account, String value) async {
+    values[account] = value;
+  }
+}
 
 void main() {
+  late HistoryLocalStore originalStore;
   final response = jsonEncode({
     'entries': [
       {
@@ -25,6 +38,8 @@ void main() {
     ]
   });
   setUp(() {
+    originalStore = NavigationHistoryService.store;
+    NavigationHistoryService.store = MemoryHistoryStore();
     UserSession.setLoggedInUser(username: 'student', token: 'test-token');
     isuCampusBuildings.add(const CampusBuilding(
         id: '8',
@@ -43,7 +58,8 @@ void main() {
         ]));
   });
   tearDown(() {
-    UserSession.logout();
+    NavigationHistoryService.store = originalStore;
+    UserSession.clearMemory();
     isuCampusBuildings.clear();
   });
 
@@ -91,7 +107,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('History'));
       await tester.tap(find.text('History'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('Could not load history.'), findsOneWidget);
       fail = false;
       await tester.tap(find.text('Retry'));

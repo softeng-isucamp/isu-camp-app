@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -8,6 +7,8 @@ import '../../auth/services/user_session.dart';
 import '../data/campus_dataset.dart';
 import '../models/navigation_history.dart';
 import '../services/navigation_history_service.dart';
+import '../services/campus_pack_service.dart';
+import '../services/smart_search_model_pack_service.dart';
 import 'about_us_screen.dart';
 
 // =========================================================================
@@ -152,7 +153,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Column(
                   children: [
-                    // Card 1: Offline Map
+                    // Card 1: Offline campus catalog
                     GestureDetector(
                       onTap: () {
                         Navigator.push(
@@ -189,7 +190,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                             const SizedBox(width: 14),
                             Expanded(
                               child: Text(
-                                'Offline Map',
+                                'Offline Campus Map',
                                 style: GoogleFonts.montserrat(
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.w600,
@@ -288,15 +289,25 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                       width: 175,
                       height: 44,
                       child: OutlinedButton(
-                        onPressed: () {
-                          UserSession.logout();
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const LoginScreen(),
-                            ),
-                            (route) => false,
-                          );
+                        onPressed: () async {
+                          try {
+                            await UserSession.logout();
+                            if (!context.mounted) return;
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                              (route) => false,
+                            );
+                          } catch (_) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Could not log out. Try again.'),
+                              ),
+                            );
+                          }
                         },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(
@@ -387,13 +398,13 @@ class _UserHeaderCurveClipper extends CustomClipper<Path> {
 }
 
 // =========================================================================
-// 2. OFFLINE MAP VIEW (Compiled into user_info_screen.dart)
+// 2. OFFLINE CAMPUS PACK
 // =========================================================================
 enum DownloadStatus {
   notDownloaded,
   downloading,
-  paused,
   completed,
+  error,
 }
 
 class _OfflineMapSubScreen extends StatefulWidget {
@@ -405,94 +416,140 @@ class _OfflineMapSubScreen extends StatefulWidget {
 
 class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
   DownloadStatus _status = DownloadStatus.notDownloaded;
-  double _progress = 0.0;
-  Timer? _downloadTimer;
-  final double _totalSizeMb = 30.0;
+  final CampusPackService _packService = CampusPackService();
+  CampusPack? _pack;
+  int _received = 0;
+  int _total = 0;
+  String? _error;
+  String? _latestVersion;
+  final SmartSearchModelPackService _smartModelService =
+      SmartSearchModelPackService();
+  SmartSearchModelPack? _smartModel;
+  bool _smartModelDownloading = false;
+  int _smartModelReceived = 0;
+  int _smartModelTotal = 0;
+  String? _smartModelError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInstalled();
+    _loadSmartModel();
+  }
+
+  Future<void> _loadSmartModel() async {
+    final model = await _smartModelService.installed();
+    if (mounted) setState(() => _smartModel = model);
+  }
+
+  Future<void> _downloadSmartModel() async {
+    setState(() {
+      _smartModelDownloading = true;
+      _smartModelError = null;
+      _smartModelReceived = 0;
+    });
+    try {
+      final model = await _smartModelService.install(
+        onProgress: (received, total) {
+          if (mounted) {
+            setState(() {
+              _smartModelReceived = received;
+              _smartModelTotal = total;
+            });
+          }
+        },
+      );
+      if (mounted) setState(() => _smartModel = model);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _smartModelError =
+            SmartSearchModelPackService.userFacingDownloadError(error));
+      }
+    } finally {
+      if (mounted) setState(() => _smartModelDownloading = false);
+    }
+  }
+
+  Future<void> _removeSmartModel() async {
+    await _smartModelService.remove();
+    if (mounted) setState(() => _smartModel = null);
+  }
+
+  Future<void> _loadInstalled() async {
+    final pack = await _packService.installed();
+    if (!mounted) return;
+    setState(() {
+      _pack = pack;
+      _status = pack == null
+          ? DownloadStatus.notDownloaded
+          : DownloadStatus.completed;
+    });
+    try {
+      final manifest = await _packService.latestManifest();
+      if (mounted)
+        setState(() => _latestVersion = manifest['catalogVersion'] as String);
+    } catch (_) {
+      // The installed pack remains available when the version check is offline.
+    }
+  }
 
   @override
   void dispose() {
-    _downloadTimer?.cancel();
+    _packService.close();
+    _smartModelService.close();
     super.dispose();
   }
 
-  void _startOrResumeDownload() {
+  Future<void> _startDownload() async {
     setState(() {
       _status = DownloadStatus.downloading;
+      _error = null;
+      _received = 0;
     });
-
-    _downloadTimer?.cancel();
-    _downloadTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        _progress += 0.025;
-        if (_progress >= 1.0) {
-          _progress = 1.0;
-          _status = DownloadStatus.completed;
-          timer.cancel();
-          _showCompletedSnackbar();
-        }
+    try {
+      final pack = await _packService.install(onProgress: (received, total) {
+        if (mounted)
+          setState(() {
+            _received = received;
+            _total = total;
+          });
       });
-    });
+      if (!mounted) return;
+      setState(() {
+        _pack = pack;
+        _latestVersion = pack.version;
+        _status = DownloadStatus.completed;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _status = DownloadStatus.error;
+      });
+    }
   }
 
-  void _pauseDownload() {
-    _downloadTimer?.cancel();
-    setState(() {
-      _status = DownloadStatus.paused;
-    });
-  }
-
-  void _deleteDownload() {
-    _downloadTimer?.cancel();
-    setState(() {
-      _status = DownloadStatus.notDownloaded;
-      _progress = 0.0;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Offline map deleted from storage.',
-          style: GoogleFonts.montserrat(fontSize: 12.5),
-        ),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _showCompletedSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'KUMPAS Campus Map downloaded successfully! Offline navigation is now active.',
-                style: GoogleFonts.montserrat(fontSize: 12.5),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0F751B),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+  Future<void> _deleteDownload() async {
+    try {
+      await _packService.remove();
+      if (!mounted) return;
+      setState(() {
+        _pack = null;
+        _status = DownloadStatus.notDownloaded;
+        _received = 0;
+        _total = 0;
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted)
+        setState(
+            () => _error = error.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final downloadedMb = (_progress * _totalSizeMb).toStringAsFixed(1);
-    final percentage = (_progress * 100).toInt();
+    final percentage = _total == 0 ? 0 : (_received * 100 ~/ _total);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B351E),
@@ -538,7 +595,7 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                   children: [
                     const SizedBox(height: 10),
 
-                    // Gold Cloud Outline Icon + "Offline Map" Title
+                    // Offline catalog title
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -548,12 +605,15 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                           color: Color(0xFFECC700),
                         ),
                         const SizedBox(width: 16),
-                        Text(
-                          'Offline Map',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                        Expanded(
+                          child: Text(
+                            'Offline Campus Map and Search',
+                            softWrap: true,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -563,7 +623,7 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
 
                     // Description Paragraph
                     Text(
-                      'To use KUMPAS offline, start by downloading the map. Then you\'ll be able to search and get directions with the map even without internet connection.',
+                      'Download the campus catalog for offline search and routes. This test build also includes offline OSM-derived and Sentinel-2 map layers for the campus area.',
                       style: GoogleFonts.montserrat(
                         fontSize: 13.5,
                         color: Colors.white.withValues(alpha: 0.9),
@@ -571,9 +631,91 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                       ),
                     ),
 
+                    const SizedBox(height: 18),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Experimental Smart Search model',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _smartModel == null
+                                ? 'Downloads a pinned multilingual model and tokenizer (~240 MiB / 252 MB). After download, Smart Search runs on this device in airplane mode. Experimental suggestions can be inaccurate.'
+                                : 'Model installed • ${(_smartModel!.storedBytes / (1024 * 1024)).toStringAsFixed(0)} MiB • ready for offline use',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 12,
+                              color: Colors.white70,
+                              height: 1.4,
+                            ),
+                          ),
+                          if (_smartModelDownloading) ...[
+                            const SizedBox(height: 12),
+                            LinearProgressIndicator(
+                              value: _smartModelTotal == 0
+                                  ? null
+                                  : _smartModelReceived / _smartModelTotal,
+                              backgroundColor: Colors.white24,
+                              color: const Color(0xFFECC700),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              '${(_smartModelReceived / (1024 * 1024)).toStringAsFixed(1)} / ${(_smartModelTotal / (1024 * 1024)).toStringAsFixed(0)} MB',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                          if (_smartModelError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(_smartModelError!,
+                                style: const TextStyle(
+                                    color: Colors.amber, fontSize: 11)),
+                          ],
+                          const SizedBox(height: 10),
+                          if (_smartModel == null)
+                            ElevatedButton.icon(
+                              onPressed: _smartModelDownloading
+                                  ? null
+                                  : _downloadSmartModel,
+                              icon: const Icon(Icons.download),
+                              label: Text(_smartModelDownloading
+                                  ? 'Downloading…'
+                                  : 'Download test model'),
+                              style: ElevatedButton.styleFrom(
+                                  foregroundColor: Colors.black87,
+                                  backgroundColor: const Color(0xFFECC700)),
+                            )
+                          else
+                            OutlinedButton.icon(
+                              onPressed: _smartModelDownloading
+                                  ? null
+                                  : _removeSmartModel,
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Remove model'),
+                              style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white),
+                            ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 32),
 
-                    // Download Card with Interactive Pause / Resume / Cancel Controls
+                    // Download card
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
@@ -596,7 +738,7 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'ISU Map (Echague Campus)',
+                                      'ISU Echague Campus Catalog',
                                       style: GoogleFonts.montserrat(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w700,
@@ -605,14 +747,11 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      _status == DownloadStatus.completed
-                                          ? '30 MB • Offline Ready'
-                                          : _status ==
-                                                  DownloadStatus.downloading
-                                              ? '$downloadedMb MB / 30 MB • $percentage%'
-                                              : _status == DownloadStatus.paused
-                                                  ? '$downloadedMb MB / 30 MB • Paused'
-                                                  : '30 MB',
+                                      _status == DownloadStatus.downloading
+                                          ? '$_received / $_total bytes • $percentage%'
+                                          : _pack != null
+                                              ? 'Approx. ${_pack!.storedBytes} bytes stored • Search ready • v${_pack!.version.substring(0, 8)}'
+                                              : _error ?? 'Not downloaded',
                                       style: GoogleFonts.montserrat(
                                         fontSize: 12,
                                         color: Colors.white70,
@@ -625,22 +764,33 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                               _buildActionButton(),
                             ],
                           ),
-                          if (_status == DownloadStatus.downloading ||
-                              _status == DownloadStatus.paused) ...[
+                          if (_status == DownloadStatus.downloading) ...[
                             const SizedBox(height: 16),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(6),
                               child: LinearProgressIndicator(
-                                value: _progress,
+                                value: _total == 0 ? null : _received / _total,
                                 minHeight: 6,
                                 backgroundColor: Colors.white24,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _status == DownloadStatus.paused
-                                      ? const Color(0xFFECC700)
-                                      : const Color(0xFF00B2FE),
-                                ),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF00B2FE)),
                               ),
                             ),
+                          ],
+                          if (_pack != null &&
+                              _latestVersion != null &&
+                              _latestVersion != _pack!.version) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                                'A newer catalog is available. Your saved catalog remains usable until the update succeeds.',
+                                style: GoogleFonts.montserrat(
+                                    color: Colors.white70, fontSize: 11)),
+                          ],
+                          if (_error != null && _pack != null) ...[
+                            const SizedBox(height: 12),
+                            Text(_error!,
+                                style: GoogleFonts.montserrat(
+                                    color: Colors.amber, fontSize: 11)),
                           ],
                         ],
                       ),
@@ -661,14 +811,14 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
                             icon: Icons.search,
                             title: 'Offline Building Search',
                             subtitle:
-                                'Search all colleges, offices, and rooms with zero mobile data.',
+                                'Search saved buildings, offices, and rooms without mobile data.',
                           ),
                           const SizedBox(height: 14),
                           _buildFeatureRow(
                             icon: Icons.directions_walk,
-                            title: 'Turn-by-Turn Offline Routing',
+                            title: 'Offline Campus Map and Walking Routes',
                             subtitle:
-                                'Navigate shortest and comfortable shaded paths anywhere on campus.',
+                                'This test build includes offline OSM-derived map data and lower-resolution Sentinel-2 imagery for the campus area.',
                           ),
                           const SizedBox(height: 14),
                           _buildFeatureRow(
@@ -712,15 +862,8 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
             valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00B2FE)),
           ),
         );
-      case DownloadStatus.paused:
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: Color(0xFFECC700),
-          ),
-          child: const Icon(Icons.pause, color: Colors.black87, size: 22),
-        );
+      case DownloadStatus.error:
+        return const Icon(Icons.error_outline, color: Colors.amber, size: 38);
       case DownloadStatus.notDownloaded:
         return const Icon(
           Icons.cloud_download_outlined,
@@ -734,10 +877,49 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
     switch (_status) {
       case DownloadStatus.notDownloaded:
         return ElevatedButton.icon(
-          onPressed: _startOrResumeDownload,
+          onPressed: _startDownload,
           icon: const Icon(Icons.download, size: 16, color: Colors.black87),
           label: Text(
-            'Download',
+            _status == DownloadStatus.error ? 'Retry' : 'Download',
+            style: GoogleFonts.montserrat(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFECC700),
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      case DownloadStatus.error:
+        if (_pack != null) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white, size: 24),
+                tooltip: 'Retry campus catalog update',
+                onPressed: _startDownload,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    color: Colors.white60, size: 24),
+                tooltip: 'Delete offline campus catalog',
+                onPressed: _deleteDownload,
+              ),
+            ],
+          );
+        }
+        return ElevatedButton.icon(
+          onPressed: _startDownload,
+          icon: const Icon(Icons.download, size: 16, color: Colors.black87),
+          label: Text(
+            'Retry',
             style: GoogleFonts.montserrat(
               fontSize: 12.5,
               fontWeight: FontWeight.bold,
@@ -754,47 +936,23 @@ class _OfflineMapSubScreenState extends State<_OfflineMapSubScreen> {
           ),
         );
       case DownloadStatus.downloading:
+        return const CircularProgressIndicator();
+      case DownloadStatus.completed:
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.pause_circle_outline,
-                  color: Color(0xFFECC700), size: 28),
-              tooltip: 'Pause Download',
-              onPressed: _pauseDownload,
-            ),
-            IconButton(
-              icon: const Icon(Icons.cancel_outlined,
-                  color: Colors.redAccent, size: 24),
-              tooltip: 'Cancel Download',
-              onPressed: _deleteDownload,
-            ),
-          ],
-        );
-      case DownloadStatus.paused:
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.play_circle_outline,
-                  color: Color(0xFF22C55E), size: 28),
-              tooltip: 'Resume Download',
-              onPressed: _startOrResumeDownload,
+              icon: const Icon(Icons.refresh, color: Colors.white, size: 24),
+              tooltip: 'Check and update campus catalog',
+              onPressed: _startDownload,
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline,
-                  color: Colors.redAccent, size: 24),
-              tooltip: 'Delete Download',
+                  color: Colors.white60, size: 24),
+              tooltip: 'Delete offline campus catalog',
               onPressed: _deleteDownload,
             ),
           ],
-        );
-      case DownloadStatus.completed:
-        return IconButton(
-          icon:
-              const Icon(Icons.delete_outline, color: Colors.white60, size: 24),
-          tooltip: 'Delete Offline Map',
-          onPressed: _deleteDownload,
         );
     }
   }

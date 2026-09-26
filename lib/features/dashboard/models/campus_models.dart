@@ -118,6 +118,8 @@ class CampusRoom {
   final String title;
   final RoomCategory category;
   final String floor;
+  final String description;
+  final String keywords;
   final IconData icon;
 
   const CampusRoom({
@@ -125,6 +127,8 @@ class CampusRoom {
     required this.title,
     required this.category,
     required this.floor,
+    this.description = '',
+    this.keywords = '',
     required this.icon,
   });
 
@@ -133,6 +137,8 @@ class CampusRoom {
         'title': title,
         'category': category.name,
         'floor': floor,
+        'description': description,
+        'keywords': keywords,
       };
 
   factory CampusRoom.fromJson(Map<String, dynamic> json) => CampusRoom(
@@ -143,6 +149,8 @@ class CampusRoom {
           orElse: () => RoomCategory.classroom,
         ),
         floor: json['floor'] ?? '1st Floor',
+        description: json['description'] ?? '',
+        keywords: json['keywords'] ?? '',
         icon: Icons.meeting_room_outlined,
       );
 }
@@ -203,6 +211,7 @@ class CampusBuilding {
   final String acronym;
   final String category;
   final String description;
+  final String keywords;
   final LatLng coordinate;
   final String? imageUrl;
   final bool isParking;
@@ -217,6 +226,7 @@ class CampusBuilding {
     required this.acronym,
     required this.category,
     required this.description,
+    this.keywords = '',
     required this.coordinate,
     this.imageUrl,
     this.isParking = false,
@@ -232,6 +242,7 @@ class CampusBuilding {
         'acronym': acronym,
         'category': category,
         'description': description,
+        'keywords': keywords,
         'latitude': coordinate.latitude,
         'longitude': coordinate.longitude,
         'imageUrl': imageUrl,
@@ -250,6 +261,7 @@ class CampusBuilding {
         acronym: json['acronym'] ?? '',
         category: json['category'] ?? 'Academic Building',
         description: json['description'] ?? '',
+        keywords: json['keywords'] ?? '',
         coordinate: LatLng(
           (json['latitude'] as num?)?.toDouble() ?? 16.7118,
           (json['longitude'] as num?)?.toDouble() ?? 121.6888,

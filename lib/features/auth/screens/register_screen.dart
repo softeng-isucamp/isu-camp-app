@@ -392,9 +392,11 @@ class _RegisterScreenState extends State<RegisterScreen>
         email: registeredEmail,
       );
 
-      UserSession.setLoggedInUser(
+      await UserSession.rememberLoggedInUser(
         username: registeredUsername,
-        token: response['access_token'] as String?,
+        email: registeredEmail,
+        token: response['access_token'] as String? ?? '',
+        refreshToken: response['refresh_token'] as String?,
       );
 
       _showSnackBar(

@@ -8,6 +8,7 @@
     <application
         android:label="isu_camp_app"
         android:name="${applicationName}"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher">
 
         <!-- 2. Google Maps API Key Configuration -->

@@ -110,10 +110,12 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = response['user'];
       final String username = user['username'];
 
-      // Remember logged-in user
-      UserSession.setLoggedInUser(
+      // Save the session before leaving the login screen.
+      await UserSession.rememberLoggedInUser(
         username: username,
-        token: response['access_token'] as String?,
+        email: user['email'] as String? ?? '',
+        token: response['access_token'] as String? ?? '',
+        refreshToken: response['refresh_token'] as String?,
       );
 
       if (!mounted) return;

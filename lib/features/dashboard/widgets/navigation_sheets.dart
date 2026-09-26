@@ -937,12 +937,16 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  widget.origin.label,
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 13,
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.grey.shade700,
+                                Expanded(
+                                  child: Text(
+                                    widget.origin.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 13,
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.grey.shade700,
+                                    ),
                                   ),
                                 ),
                                 const Icon(
@@ -964,6 +968,8 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                             alignment: Alignment.centerLeft,
                             child: Text(
                               widget.destination.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.montserrat(
                                 fontSize: 13,
                                 fontStyle: FontStyle.italic,
@@ -1395,29 +1401,35 @@ class RouteDetailsSheet extends StatelessWidget {
             // Origin to Destination Timeline
             Row(
               children: [
-                Column(
-                  children: [
-                    Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFF22C55E),
-                          width: 4,
+                Flexible(
+                  flex: 2,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF22C55E),
+                            width: 4,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      origin.label.toUpperCase(),
-                      style: GoogleFonts.montserrat(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                      const SizedBox(height: 4),
+                      Text(
+                        origin.label.toUpperCase(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 Expanded(
                   child: Container(
@@ -1426,23 +1438,28 @@ class RouteDetailsSheet extends StatelessWidget {
                     color: Colors.grey.shade400,
                   ),
                 ),
-                Column(
-                  children: [
-                    const Icon(
-                      Icons.location_on,
-                      color: Colors.grey,
-                      size: 20,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      destination.acronym.toUpperCase(),
-                      style: GoogleFonts.montserrat(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                Flexible(
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.location_on,
+                        color: Colors.grey,
+                        size: 20,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        destination.acronym.toUpperCase(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
