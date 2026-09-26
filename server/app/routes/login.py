@@ -9,7 +9,7 @@ from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
 from app.utils.email import send_otp_email
-from app.utils.session import issue_session
+from app.utils.session import issue_session, issue_refresh_session
 
 
 router = APIRouter(
@@ -204,6 +204,7 @@ def login(data: LoginRequest):
         "success": True,
         "message": "Login successful.",
         "access_token": issue_session(user["id"]),
+        "refresh_token": issue_refresh_session(user["id"], supabase),
         "user": {
             "id": user["id"],
             "username": user["username"],

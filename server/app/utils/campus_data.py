@@ -34,6 +34,7 @@ def building_for_map(row):
         "acronym": row.get("building_code") or "",
         "category": classification,
         "description": row.get("description") or "",
+        "keywords": row.get("keywords") or "",
         "latitude": position[0],
         "longitude": position[1],
         "polygonCoordinates": polygon,

@@ -1,5 +1,6 @@
-"""History using the existing UserHistory foreign keys; no schema changes."""
+"""User-owned History with optional idempotent client event IDs."""
 import logging
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -9,7 +10,7 @@ from app.utils.session import current_user_id
 router = APIRouter(prefix="/history", tags=["History"])
 logger = logging.getLogger(__name__)
 HISTORY_SELECT = (
-    "id,Building_id,Location_id,created_at,"
+    "id,Building_id,Location_id,client_event_id,created_at,"
     "building:building!Building_id(building_name,building_code),"
     "location:location!Location_id(location_name)"
 )
@@ -19,6 +20,7 @@ class HistoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     buildingId: int = Field(gt=0)
     locationId: int | None = Field(default=None, gt=0)
+    clientEventId: UUID | None = None
 
 
 def history_entry(row):
@@ -30,6 +32,7 @@ def history_entry(row):
             "destinationAcronym": building.get("building_code") or "",
             "roomId": str(row["Location_id"]) if row.get("Location_id") is not None else None,
             "roomName": location.get("location_name"),
+            "clientEventId": str(row["client_event_id"]) if row.get("client_event_id") else None,
             "createdAt": row["created_at"]}
 
 
@@ -48,6 +51,27 @@ def list_history(offset: int = Query(0, ge=0), user_id: int = Depends(current_us
 @router.post("", status_code=201)
 def create_history(data: HistoryRequest, user_id: int = Depends(current_user_id)):
     try:
+        event_id = str(data.clientEventId) if data.clientEventId else None
+
+        def existing_event():
+            if not event_id:
+                return None
+            rows = (supabase.table("UserHistory")
+                    .select("id,Building_id,Location_id")
+                    .eq("User_id", user_id).eq("client_event_id", event_id)
+                    .execute().data)
+            if not rows:
+                return None
+            row = rows[0]
+            if (row["Building_id"] != data.buildingId or
+                    row.get("Location_id") != data.locationId):
+                raise HTTPException(409, "This History event ID belongs to another destination.")
+            return {"id": str(row["id"])}
+
+        existing = existing_event()
+        if existing:
+            return existing
+
         building = (supabase.table("building").select("building_id")
                     .eq("building_id", data.buildingId).execute().data)
         if not building:
@@ -58,10 +82,21 @@ def create_history(data: HistoryRequest, user_id: int = Depends(current_user_id)
                         .eq("building_id", data.buildingId).execute().data)
             if not location:
                 raise HTTPException(400, "This room does not belong to the selected building.")
-        rows = supabase.table("UserHistory").insert({
+
+        payload = {
             "User_id": user_id, "Building_id": data.buildingId,
             "Location_id": data.locationId,
-        }).execute().data
+        }
+        if event_id:
+            payload["client_event_id"] = event_id
+        try:
+            rows = supabase.table("UserHistory").insert(payload).execute().data
+        except Exception:
+            # A concurrent retry may win the unique key after the lookup above.
+            existing = existing_event()
+            if existing:
+                return existing
+            raise
         if not rows:
             raise HTTPException(503, "History was not saved. Please try again.")
         return {"id": str(rows[0]["id"])}

@@ -3,6 +3,9 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  connectivity_plus
+  flutter_onnxruntime
+  flutter_secure_storage_windows
   geolocator_windows
 )
 

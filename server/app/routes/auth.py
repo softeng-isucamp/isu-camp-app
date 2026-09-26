@@ -8,7 +8,7 @@ from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
 from app.utils.email import send_otp_email
-from app.utils.session import issue_session, session_secret
+from app.utils.session import issue_session, issue_refresh_session, session_secret
 
 
 router = APIRouter(
@@ -308,4 +308,5 @@ def set_password(data: SetPasswordRequest):
         "success": True,
         "message": "Account created successfully.",
         "access_token": issue_session(user.data[0]["id"]),
+        "refresh_token": issue_refresh_session(user.data[0]["id"], supabase),
     }

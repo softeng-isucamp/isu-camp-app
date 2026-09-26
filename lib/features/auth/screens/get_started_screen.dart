@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'login_screen.dart';
+import '../../dashboard/screens/dashboard_screen.dart';
+import '../../dashboard/services/campus_pack_service.dart';
 
 class GetStartedScreen extends StatefulWidget {
   const GetStartedScreen({super.key});
@@ -12,6 +14,7 @@ class GetStartedScreen extends StatefulWidget {
 
 class _GetStartedScreenState extends State<GetStartedScreen>
     with SingleTickerProviderStateMixin {
+  late final Future<CampusPack?> _savedPack;
   late final AnimationController _controller;
 
   // Logo Animations (Spin, Scale, and Fade - No Shadow)
@@ -26,6 +29,7 @@ class _GetStartedScreenState extends State<GetStartedScreen>
   @override
   void initState() {
     super.initState();
+    _savedPack = CampusPackService().installed();
 
     _controller = AnimationController(
       vsync: this,
@@ -245,6 +249,22 @@ class _GetStartedScreenState extends State<GetStartedScreen>
                         ),
 
                         const SizedBox(height: 14),
+
+                        FutureBuilder<CampusPack?>(
+                          future: _savedPack,
+                          builder: (context, snapshot) => snapshot.data == null
+                              ? const SizedBox.shrink()
+                              : TextButton.icon(
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const DashboardScreen(),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.map_outlined),
+                                  label: const Text('Open offline campus map'),
+                                ),
+                        ),
 
                         // Campus Label
                         Text(

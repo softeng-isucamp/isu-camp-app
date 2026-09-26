@@ -268,7 +268,7 @@ class AboutUsScreen extends StatelessWidget {
 
                       // Narrative Paragraph 2
                       Text(
-                        'Our goal is to make campus navigation faster, easier, and more accessible by providing interactive maps, location searching, route recommendations, and offline navigation capabilities. Through KUMPAS, we aim to reduce confusion when finding unfamiliar locations and provide users with a more convenient way to navigate the campus.',
+                        'Our goal is to make campus navigation faster, easier, and more accessible by providing interactive maps, location searching, route recommendations, and offline campus navigation. Downloaded building outlines, walking paths, and indoor locations support offline maps and walking routes. Street and satellite imagery are available when connected. Through KUMPAS, we aim to reduce confusion when finding unfamiliar locations and provide users with a more convenient way to navigate the campus.',
                         textAlign: TextAlign.justify,
                         style: GoogleFonts.montserrat(
                           fontSize: 13,

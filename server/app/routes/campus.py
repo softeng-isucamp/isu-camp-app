@@ -1,6 +1,8 @@
 import logging
+import hashlib
+import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from app.database.supabase import supabase
 from app.utils.campus_data import building_for_map
@@ -61,7 +63,7 @@ def get_buildings():
         location_rows = routing_rows(
             "location",
             "location_id,building_id,type_id,location_code,"
-            "location_name,floor_id",
+            "location_name,floor_id,description,keywords",
             "location_id",
         )
         floor_rows = routing_rows(
@@ -118,6 +120,8 @@ def get_buildings():
                          or row.get("location_code")
                          or "Unnamed location",
                 "category": category,
+                "description": row.get("description") or "",
+                "keywords": row.get("keywords") or "",
                 "floor": floor_label(
                     floor.get("floor_number") if floor else None
                 ),
@@ -144,3 +148,43 @@ def get_buildings():
             status_code=503,
             detail="Campus locations are temporarily unavailable.",
         ) from None
+
+
+def catalog_bytes():
+    catalog = get_buildings()
+    # The offline pack carries the same active routing source used by /routes.
+    # The app can then route locally when the API or network is unavailable.
+    catalog["routingGraph"] = {
+        "nodes": routing_rows("route_node", "node_id,building_id,latitude,longitude,node_type,status,name", "node_id"),
+        "pathways": routing_rows("pathway", "pathway_id,source_node_id,destination_node_id,status,direction,shade,name", "pathway_id"),
+        "modes": routing_rows("pathway_allowed_mode", "pathway_id,mode", "pathway_id,mode"),
+        "points": routing_rows("path_point", "point_id,pathway_id,sequence_no,latitude,longitude,status", "point_id"),
+    }
+    return json.dumps(catalog, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+@router.get("/pack/manifest")
+def get_pack_manifest():
+    content = catalog_bytes()
+    version = hashlib.sha256(content).hexdigest()
+    return {
+        "schemaVersion": 1,
+        "catalogVersion": version,
+        "minClientSchema": 1,
+        "maxClientSchema": 1,
+        "capabilities": {"catalogSearch": True, "mapTiles": False, "routing": True},
+        "files": [{
+            "path": "catalog.json",
+            "url": f"/campus/pack/catalog?version={version}",
+            "size": len(content),
+            "sha256": version,
+        }],
+    }
+
+
+@router.get("/pack/catalog")
+def get_pack_catalog(version: str):
+    content = catalog_bytes()
+    if hashlib.sha256(content).hexdigest() != version:
+        raise HTTPException(status_code=409, detail="Catalog changed. Fetch a new manifest.")
+    return Response(content=content, media_type="application/json", headers={"Cache-Control": "no-store"})
