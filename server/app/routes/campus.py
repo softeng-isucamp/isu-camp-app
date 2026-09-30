@@ -54,14 +54,14 @@ def get_buildings():
     try:
         building_rows = routing_rows(
             "building",
-            "building_id,building_code,building_name,description,"
+            "building_id,building_code,building_name,description,keywords,"
             "latitude,longitude,polygon_coordinates,classification",
             "building_id",
         )
         location_rows = routing_rows(
             "location",
             "location_id,building_id,type_id,location_code,"
-            "location_name,floor_id",
+            "location_name,description,keywords,floor_id",
             "location_id",
         )
         floor_rows = routing_rows(
@@ -118,6 +118,8 @@ def get_buildings():
                          or row.get("location_code")
                          or "Unnamed location",
                 "category": category,
+                "description": row.get("description") or "",
+                "keywords": row.get("keywords") or "",
                 "floor": floor_label(
                     floor.get("floor_number") if floor else None
                 ),

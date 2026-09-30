@@ -14,6 +14,17 @@ class CampusDataTests(unittest.TestCase):
         self.assertEqual(building["name"], "Infirmary")
         self.assertEqual(building["latitude"], 16.717874)
 
+    def test_search_keywords_are_exposed_and_default_to_empty(self):
+        row = {
+            "building_id": 5, "building_name": "Library",
+            "latitude": "16.717874", "longitude": "121.688314",
+        }
+        self.assertEqual(building_for_map(row)["keywords"], "")
+        self.assertEqual(
+            building_for_map({**row, "keywords": "books, study"})["keywords"],
+            "books, study",
+        )
+
     def test_null_coordinates_use_polygon_without_duplicate_closing_point(self):
         building = building_for_map({
             "building_id": 1,
