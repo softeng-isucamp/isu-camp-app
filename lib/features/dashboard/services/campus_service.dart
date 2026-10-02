@@ -42,7 +42,9 @@ class CampusService {
         .get(
           Uri.parse('${AuthService.baseUrl}/campus/buildings'),
         )
-        .timeout(const Duration(seconds: 20));
+        // The campus response includes embedded building and room photos and
+        // can take more than 20 seconds to download on a mobile connection.
+        .timeout(const Duration(seconds: 60));
     if (response.statusCode != 200) {
       throw Exception('Could not load campus locations.');
     }

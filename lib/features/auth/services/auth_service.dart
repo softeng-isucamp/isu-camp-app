@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class LoginException implements Exception {
@@ -36,10 +37,13 @@ class OtpException implements Exception {
 }
 
 class AuthService {
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'https://api.kumpas.live',
-  );
+  static const String _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  static String get baseUrl => _configuredBaseUrl.isNotEmpty
+      ? _configuredBaseUrl
+      : !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? 'http://10.0.2.2:8000'
+          : 'http://localhost:8000';
 
   // Validation errors can contain a list of objects instead of a string.
   // Only expose messages, never the submitted input included in those objects.
