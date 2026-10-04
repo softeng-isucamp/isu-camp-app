@@ -13,6 +13,8 @@ void main() {
 
     expect(find.text('Username'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Sign in as'), findsNothing);
+    expect(find.text('Keep me signed in'), findsOneWidget);
     expect(find.text('Log in'), findsWidgets);
     await tester.binding.setSurfaceSize(null);
   });

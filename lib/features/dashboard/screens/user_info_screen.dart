@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../auth/screens/help_screen.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/user_session.dart';
+import '../../auth/services/remembered_session_store.dart';
 import '../data/campus_dataset.dart';
 import '../models/navigation_history.dart';
 import '../services/navigation_history_service.dart';
@@ -288,8 +289,21 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                       width: 175,
                       height: 44,
                       child: OutlinedButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          try {
+                            await RememberedSessionStore.clear();
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Could not clear the saved session. Please try logging out again.')),
+                              );
+                            }
+                            return;
+                          }
                           UserSession.logout();
+                          if (!context.mounted) return;
                           Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(

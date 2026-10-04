@@ -9,6 +9,7 @@ import 'get_started_screen.dart';
 import 'help_screen.dart';
 import 'register_screen.dart';
 import '../services/user_session.dart';
+import '../services/remembered_session_store.dart';
 import '../services/verification_security_controller.dart';
 import '../../onboarding/screens/welcome_greeting_screen.dart';
 
@@ -25,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isCaptchaChecked = false;
   bool _isPasswordVisible = false;
   bool _isLoggingIn = false;
+  bool _keepSignedIn = false;
   int _failedLoginAttempts = 0;
   Timer? _lockoutTimer;
   DateTime? _loginLockedUntil;
@@ -115,6 +117,20 @@ class _LoginScreenState extends State<LoginScreen> {
         username: username,
         token: response['access_token'] as String?,
       );
+
+      try {
+        await RememberedSessionStore.save(
+          username: username,
+          token: response['access_token'] as String?,
+          keepSignedIn: _keepSignedIn,
+        );
+      } catch (_) {
+        if (mounted && _keepSignedIn) {
+          _showSnackBar(
+              'Signed in, but this device could not remember your session.',
+              Colors.orangeAccent.shade700);
+        }
+      }
 
       if (!mounted) return;
 
@@ -1088,6 +1104,26 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+
+                      Row(
+                        key: const ValueKey('login_keep_signed_in'),
+                        children: [
+                          Checkbox(
+                            value: _keepSignedIn,
+                            onChanged: (value) =>
+                                setState(() => _keepSignedIn = value ?? false),
+                            activeColor: const Color(0xFF0F751B),
+                          ),
+                          GestureDetector(
+                            onTap: () =>
+                                setState(() => _keepSignedIn = !_keepSignedIn),
+                            child: Text('Keep me signed in',
+                                style: GoogleFonts.montserrat(
+                                    fontSize: 13, fontWeight: FontWeight.w500)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
 
                       // reCAPTCHA Box
                       Container(

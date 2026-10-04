@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'help_screen.dart';
 import '../services/user_session.dart';
+import '../services/remembered_session_store.dart';
 import '../services/auth_service.dart';
 import '../services/verification_security_controller.dart';
 import '../../onboarding/screens/welcome_greeting_screen.dart';
@@ -52,6 +53,8 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isAgreedToTerms = false;
+  String? _selectedRole;
+  bool _keepSignedIn = false;
   bool _isRequestingCode = false;
   bool _isVerifyingCode = false;
   bool _isResendingCode = false;
@@ -201,6 +204,14 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (username.isEmpty || email.isEmpty) {
       _showSnackBar(
         'Please fill in both Username and Email.',
+        Colors.redAccent,
+      );
+      return;
+    }
+
+    if (_selectedRole == null) {
+      _showSnackBar(
+        'Please select Student, Teacher, or Visitor.',
         Colors.redAccent,
       );
       return;
@@ -396,6 +407,22 @@ class _RegisterScreenState extends State<RegisterScreen>
         username: registeredUsername,
         token: response['access_token'] as String?,
       );
+
+      try {
+        await RememberedSessionStore.save(
+          username: registeredUsername,
+          token: response['access_token'] as String?,
+          keepSignedIn: _keepSignedIn,
+        );
+      } catch (_) {
+        if (mounted && _keepSignedIn) {
+          _showSnackBar(
+              'Account created, but this device could not remember your session.',
+              Colors.orangeAccent.shade700);
+        }
+      }
+
+      if (!mounted) return;
 
       _showSnackBar(
         'Account created successfully! Welcome to ISU-CAMP.',
@@ -874,6 +901,53 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
           ),
 
+          const SizedBox(height: 16),
+
+          // Account type is a frontend choice until the signup API accepts it.
+          Text(
+            'Account Type',
+            style: GoogleFonts.montserrat(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            key: const ValueKey('signup_role_selector'),
+            initialValue: _selectedRole,
+            hint: Text(
+              'Select account type',
+              style: GoogleFonts.montserrat(
+                color: Colors.grey.shade400,
+                fontSize: 13.5,
+              ),
+            ),
+            items: const ['Student', 'Teacher', 'Visitor']
+                .map((role) => DropdownMenuItem(value: role, child: Text(role)))
+                .toList(),
+            onChanged: (role) => setState(() => _selectedRole = role),
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(
+                  color: Color(0xFF0F4D20),
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
 
           // Email Address Field
@@ -1460,6 +1534,25 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
 
           const SizedBox(height: 18),
+
+          Row(
+            key: const ValueKey('signup_keep_signed_in'),
+            children: [
+              Checkbox(
+                value: _keepSignedIn,
+                onChanged: (value) =>
+                    setState(() => _keepSignedIn = value ?? false),
+                activeColor: const Color(0xFF0F751B),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _keepSignedIn = !_keepSignedIn),
+                child: Text('Keep me signed in',
+                    style: GoogleFonts.montserrat(
+                        fontSize: 12, fontWeight: FontWeight.w500)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
 
           // Green "Complete Registration" Button
           SizedBox(
