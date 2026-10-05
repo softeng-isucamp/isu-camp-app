@@ -211,7 +211,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     if (_selectedRole == null) {
       _showSnackBar(
-        'Please select Student, Teacher, or Visitor.',
+        'Please select Student, Staff, or Visitor.',
         Colors.redAccent,
       );
       return;
@@ -391,6 +391,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         email: _emailController.text.trim(),
         password: password,
         confirmPassword: confirmPassword,
+        userType: _selectedRole!,
       );
 
       if (!mounted) return;
@@ -903,7 +904,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
           const SizedBox(height: 16),
 
-          // Account type is a frontend choice until the signup API accepts it.
+          // Saved to userInfo.user_type when account creation succeeds.
           Text(
             'Account Type',
             style: GoogleFonts.montserrat(
@@ -923,7 +924,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                 fontSize: 13.5,
               ),
             ),
-            items: const ['Student', 'Teacher', 'Visitor']
+            items: const ['Student', 'Staff', 'Visitor']
                 .map((role) => DropdownMenuItem(value: role, child: Text(role)))
                 .toList(),
             onChanged: (role) => setState(() => _selectedRole = role),

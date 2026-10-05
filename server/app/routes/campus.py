@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.database.supabase import supabase
 from app.utils.campus_data import building_for_map, cover_photos_for_map
-from app.utils.routing import walking_routes, RoutingError
+from app.utils.routing import campus_routes, RoutingError
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -22,7 +22,7 @@ class RouteOrigin(BaseModel):
 class RouteRequest(BaseModel):
     origin: RouteOrigin
     destinationBuildingId: str
-    mode: Literal["walking"] = "walking"
+    mode: Literal["walking", "car", "motorcycle", "bicycle"] = "walking"
 
 
 def routing_rows(table, columns, order):
@@ -41,12 +41,12 @@ def get_routes(request: RouteRequest):
         paths = routing_rows("pathway", "pathway_id,source_node_id,destination_node_id,status,direction,shade,name", "pathway_id")
         modes = routing_rows("pathway_allowed_mode", "pathway_id,mode", "pathway_id,mode")
         points = routing_rows("path_point", "point_id,pathway_id,sequence_no,latitude,longitude,status", "point_id")
-        return walking_routes(nodes, paths, modes, points, request.model_dump())
+        return campus_routes(nodes, paths, modes, points, request.model_dump())
     except RoutingError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
     except Exception:
-        logger.exception("Could not compute walking routes")
-        raise HTTPException(status_code=503, detail="Walking routes are temporarily unavailable.") from None
+        logger.exception("Could not compute campus routes")
+        raise HTTPException(status_code=503, detail="Campus routes are temporarily unavailable.") from None
 
 
 @router.get("/buildings")

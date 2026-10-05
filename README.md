@@ -2,7 +2,7 @@
 
 ### API backend
 
-The app uses the live API (`https://api.kumpas.live`) by default. To run against
+The app uses a local API by default. To run against
 the repository backend on your own machine, start it in a separate PowerShell
 terminal (requires the server virtual environment and configured `server/.env`):
 
@@ -31,5 +31,11 @@ testing. Changing `API_BASE_URL` requires restarting the Flutter run, not just
 hot reload. To explicitly select the live API, pass
 `--dart-define=API_BASE_URL=https://api.kumpas.live`.
 
-The deployed API currently requires a CAPTCHA token that this checkout does
-not generate, so live login still needs the CAPTCHA integration to be aligned.
+Without the override, Android uses `http://10.0.2.2:8000`; web and desktop use
+`http://localhost:8000`. For local browser development, select
+`Chrome - local backend` in VS Code or run `flutter run -d chrome`.
+To use the deployed backend, select `App - live backend` in VS Code or pass
+`--dart-define=API_BASE_URL=https://api.kumpas.live`. The deployed API
+currently requires a CAPTCHA token that this checkout does not generate. Local
+development uses the matching repository backend; production login still needs
+the deployed backend and CAPTCHA integration to be aligned.

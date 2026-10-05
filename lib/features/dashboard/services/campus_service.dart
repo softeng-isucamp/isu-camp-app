@@ -7,13 +7,14 @@ import '../models/campus_models.dart';
 
 class CampusService {
   static Future<List<WalkingRoute>> fetchRoutes(
-      NavigationOrigin origin, CampusBuilding destination) async {
+      NavigationOrigin origin, CampusBuilding destination,
+      {TransportMode mode = TransportMode.walking}) async {
     final response = await http
         .post(
           Uri.parse('${AuthService.baseUrl}/campus/routes'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'mode': 'walking',
+            'mode': mode.name,
             'destinationBuildingId': destination.id,
             'origin': {
               'type': origin.type.name,
@@ -30,7 +31,7 @@ class CampusService {
     if (response.statusCode != 200) {
       throw Exception(data['detail'] is String
           ? data['detail']
-          : 'Unable to load walking routes.');
+          : 'Unable to load routes for this transport mode.');
     }
     return (data['routes'] as List)
         .map((r) => WalkingRoute.fromJson(r as Map<String, dynamic>))

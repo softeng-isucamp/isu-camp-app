@@ -51,6 +51,7 @@ class WalkingRouteStep {
 }
 
 class WalkingRoute {
+  final TransportMode mode;
   final RouteType type;
   final double distanceMeters;
   final double estimatedMinutes;
@@ -59,7 +60,9 @@ class WalkingRoute {
   final List<WalkingRouteStep> steps;
 
   WalkingRoute.fromJson(Map<String, dynamic> json)
-      : type = RouteType.values.byName(json['type'] as String),
+      : mode =
+            TransportMode.values.byName(json['mode'] as String? ?? 'walking'),
+        type = RouteType.values.byName(json['type'] as String),
         distanceMeters = (json['distanceMeters'] as num).toDouble(),
         estimatedMinutes = (json['estimatedMinutes'] as num).toDouble(),
         startNodeName = json['startNodeName'] as String,

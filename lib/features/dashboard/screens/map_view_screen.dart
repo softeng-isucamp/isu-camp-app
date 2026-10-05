@@ -15,6 +15,7 @@ import '../models/building_marker_style.dart';
 import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
 import '../models/navigation_heading.dart';
+import '../models/navigation_progress.dart';
 import '../services/campus_service.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/navigation_sheets.dart';
@@ -52,13 +53,18 @@ enum NavigationUiState {
 }
 
 class MapViewScreen extends StatefulWidget {
-  const MapViewScreen({super.key});
+  const MapViewScreen({super.key, this.navigationClock});
+
+  /// Injectable clock for GPS freshness and reroute cooldown tests.
+  final DateTime Function()? navigationClock;
 
   @override
   State<MapViewScreen> createState() => _MapViewScreenState();
 }
 
 class _MapViewScreenState extends State<MapViewScreen> {
+  DateTime get _navigationNow =>
+      widget.navigationClock?.call() ?? DateTime.now();
   static const NavigationOrigin _defaultOrigin = NavigationOrigin(
     id: 'main_gate',
     label: 'ISU Main Gate',
@@ -92,6 +98,17 @@ class _MapViewScreenState extends State<MapViewScreen> {
   int _previewStepIndex = 0;
   String? _historySessionId;
   Future<void> _historyWriteQueue = Future<void>.value();
+  NavigationProgress? _liveProgress;
+  double _gpsAccuracy = double.infinity;
+  DateTime? _lastPositionAt;
+  DateTime? _lastRerouteAt;
+  Timer? _gpsWatchdog;
+  bool _isRerouting = false;
+  String? _navigationStatus;
+  String? _routeError;
+  int _navigationGeneration = 0;
+  int _offRouteFixes = 0;
+  int _arrivalFixes = 0;
 
   bool get _isNavigationActive =>
       _navigationState == NavigationUiState.routePreview ||
@@ -269,6 +286,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void dispose() {
     _searchController.dispose();
     _positionSubscription?.cancel();
+    _gpsWatchdog?.cancel();
     _compassSubscription?.cancel();
     _mapZoom.dispose();
     _mapController.dispose();
@@ -307,19 +325,29 @@ class _MapViewScreenState extends State<MapViewScreen> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       );
       if (!mounted) return;
       _updateCurrentPosition(position);
 
-      await _positionSubscription?.cancel();
-      if (!mounted) return;
+      // Keep an existing GPS stream alive when refreshing the current fix.
+      if (_positionSubscription != null) return;
       _positionSubscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 2,
+          distanceFilter: 0,
         ),
-      ).listen(_updateCurrentPosition);
+      ).listen(_updateCurrentPosition, onError: (Object error) {
+        if (!mounted) return;
+        _positionSubscription?.cancel();
+        _positionSubscription = null;
+        setState(() {
+          _locationStatus =
+              'GPS is unavailable. Check Location Services and permissions.';
+          _navigationStatus = _locationStatus;
+        });
+      });
     } catch (_) {
       if (mounted) {
         setState(() => _locationStatus =
@@ -333,6 +361,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void _updateCurrentPosition(Position position) {
     if (!mounted) return;
     final next = LatLng(position.latitude, position.longitude);
+    _gpsAccuracy = position.accuracy;
+    _lastPositionAt = position.timestamp;
     final previous = _currentUserLocation;
     setState(() {
       if (position.speed.isFinite &&
@@ -359,6 +389,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
         _hasSelectedOrigin = isuEchagueBounds.contains(_currentUserLocation!);
       }
     });
+
+    _refreshNavigationProgress(countFix: true);
 
     if (_navigationState == NavigationUiState.navigating &&
         isuEchagueBounds.contains(_currentUserLocation!)) {
@@ -464,12 +496,21 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   void _cancelDirections() {
     _stopCompassTracking();
+    _gpsWatchdog?.cancel();
+    _navigationGeneration++;
     setState(() {
       _navigationState = NavigationUiState.idle;
       _walkingRoute = null;
       _selectedRoom = null;
       _historySessionId = null;
       _followNavigationCamera = true;
+      _liveProgress = null;
+      _navigationStatus = null;
+      _routeError = null;
+      _isRerouting = false;
+      _lastRerouteAt = null;
+      _offRouteFixes = 0;
+      _arrivalFixes = 0;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _mapController.moveAndRotate(isuCampusCenter, 16.8, 0);
@@ -506,18 +547,153 @@ class _MapViewScreenState extends State<MapViewScreen> {
     });
   }
 
-  void _startNavigation() {
-    if (_selectedOrigin.type != NavigationOriginType.currentLocation) return;
+  Future<void> _startNavigation() async {
+    if (_selectedOrigin.type != NavigationOriginType.currentLocation ||
+        _walkingRoute == null) return;
+    await _initializeCurrentLocation();
+    if (!mounted || _navigationState != NavigationUiState.routeDetails) return;
+    if (_currentUserLocation == null ||
+        _lastPositionAt == null ||
+        _navigationNow.difference(_lastPositionAt!) >
+            const Duration(seconds: 20) ||
+        !isuEchagueBounds.contains(_currentUserLocation!)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'A current GPS position inside campus is needed to start navigation.')));
+      return;
+    }
     FocusScope.of(context).unfocus();
     _recordHistory(NavigationHistoryStatus.navigationStarted);
     setState(() {
       _navigationState = NavigationUiState.navigating;
       _followNavigationCamera = true;
+      _navigationGeneration++;
+      _liveProgress = null;
+      _arrivalFixes = 0;
+      _offRouteFixes = 0;
+      _lastRerouteAt = null;
     });
+    _gpsWatchdog?.cancel();
+    _gpsWatchdog = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _navigationState != NavigationUiState.navigating) return;
+      if (_lastPositionAt == null ||
+          _navigationNow.difference(_lastPositionAt!) >
+              const Duration(seconds: 20)) {
+        _arrivalFixes = 0;
+        _offRouteFixes = 0;
+        setState(() =>
+            _navigationStatus = 'GPS signal lost. Waiting for your location…');
+      }
+    });
+    await _reroute(force: true);
+    if (!mounted || _navigationState != NavigationUiState.navigating) return;
     _startCompassTracking();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _updateNavigationCamera(force: true);
     });
+  }
+
+  void _refreshNavigationProgress({bool countFix = false}) {
+    final route = _walkingRoute;
+    final location = _currentUserLocation;
+    if (_navigationState != NavigationUiState.navigating ||
+        route == null ||
+        location == null) return;
+    if (_lastPositionAt == null ||
+        _navigationNow.difference(_lastPositionAt!) >
+            const Duration(seconds: 20)) {
+      setState(() =>
+          _navigationStatus = 'GPS signal lost. Waiting for your location…');
+      _arrivalFixes = 0;
+      _offRouteFixes = 0;
+      return;
+    }
+    if (!_gpsAccuracy.isFinite || _gpsAccuracy > 25 || _gpsAccuracy < 0) {
+      setState(() => _navigationStatus =
+          'GPS accuracy is low. Waiting for a better position…');
+      _arrivalFixes = 0;
+      _offRouteFixes = 0;
+      return;
+    }
+    final progress =
+        NavigationProgress.calculate(route, location, accuracy: _gpsAccuracy);
+    setState(() {
+      _liveProgress = progress;
+      if (!_isRerouting) _navigationStatus = _locationStatus ?? _routeError;
+    });
+    if (_isRerouting || !countFix) return;
+    _arrivalFixes = progress.arrived ? _arrivalFixes + 1 : 0;
+    if (_arrivalFixes >= 2) {
+      _gpsWatchdog?.cancel();
+      _stopCompassTracking();
+      _navigationGeneration++;
+      setState(() => _navigationState = NavigationUiState.arrived);
+      return;
+    }
+    _offRouteFixes = progress.offRouteMeters > 30 ? _offRouteFixes + 1 : 0;
+    if (_offRouteFixes >= 2 && isuEchagueBounds.contains(location)) _reroute();
+  }
+
+  Future<void> _reroute({bool force = false}) async {
+    final location = _currentUserLocation;
+    final destination = _selectedBuilding;
+    if (_isRerouting ||
+        location == null ||
+        destination == null ||
+        _navigationState != NavigationUiState.navigating) return;
+    if (!_gpsAccuracy.isFinite ||
+        _gpsAccuracy > 25 ||
+        _gpsAccuracy < 0 ||
+        _lastPositionAt == null ||
+        _navigationNow.difference(_lastPositionAt!) >
+            const Duration(seconds: 20)) {
+      _refreshNavigationProgress();
+      return;
+    }
+    if (!force &&
+        _lastRerouteAt != null &&
+        _navigationNow.difference(_lastRerouteAt!) <
+            const Duration(seconds: 15)) return;
+    final generation = _navigationGeneration;
+    _lastRerouteAt = _navigationNow;
+    setState(() {
+      _isRerouting = true;
+      _routeError = null;
+      _navigationStatus = 'Updating route from your current location…';
+    });
+    try {
+      final routes = await CampusService.fetchRoutes(
+          NavigationOrigin(
+              id: 'current_location',
+              label: 'My Current Location',
+              coordinate: location,
+              type: NavigationOriginType.currentLocation),
+          destination,
+          mode: _selectedTransportMode);
+      final route =
+          routes.firstWhere((route) => route.type == _selectedRouteType);
+      if (route.points.isEmpty) {
+        throw Exception('No mapped route is available.');
+      }
+      if (!mounted || generation != _navigationGeneration) return;
+      setState(() {
+        _walkingRoute = route;
+        _isRerouting = false;
+        _navigationStatus = null;
+        _routeError = null;
+        _offRouteFixes = 0;
+        _arrivalFixes = 0;
+      });
+      _refreshNavigationProgress();
+    } catch (error) {
+      if (!mounted || generation != _navigationGeneration) return;
+      setState(() {
+        _isRerouting = false;
+        _routeError =
+            'Route update failed. ${error.toString().replaceFirst('Exception: ', '')}';
+        _navigationStatus = _routeError;
+      });
+    }
   }
 
   void _openRoutePreview() {
@@ -1644,13 +1820,15 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 selectedRouteType: _selectedRouteType,
                 selectedTransportMode: _selectedTransportMode,
                 onEndRoute: _confirmEndNavigation,
-                onSimulateArrival: () {
-                  _recordHistory(NavigationHistoryStatus.completed);
-                  _stopCompassTracking();
-                  setState(() {
-                    _navigationState = NavigationUiState.arrived;
-                  });
-                },
+                progress: _liveProgress,
+                navigationStatus: _navigationStatus,
+                onRecenter: _resumeNavigationFollowing,
+                onRetryRoute: !_isRerouting && _navigationStatus != null
+                    ? () async {
+                        await _initializeCurrentLocation();
+                        if (mounted) await _reroute(force: true);
+                      }
+                    : null,
               ),
             ),
 
