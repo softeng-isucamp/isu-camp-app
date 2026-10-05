@@ -1,4 +1,4 @@
-"""Walking graph routing. All weights are nonnegative; no database writes."""
+"""Campus transport graph routing. All weights are nonnegative; no database writes."""
 import heapq
 import math
 import re
@@ -7,6 +7,21 @@ from app.utils.campus_data import coordinate
 
 SHADE_PENALTIES = {"fully shaded": 0, "mostly shaded": .25,
                    "partial shade": .5, "unshaded": 1, "unknown": 1}
+
+# Nominal campus travel estimates in meters/minute, not live traffic speeds.
+MODE_SPEEDS = {"walking": 80, "car": 350, "motorcycle": 450, "bicycle": 220}
+MODE_LABELS = {"walking": "Walking", "car": "Car", "motorcycle": "Motorcycle", "bicycle": "Bicycle"}
+MODE_ALIASES = {"walking": "walking", "walk": "walking", "pedestrian": "walking",
+                "car": "car", "motorcycle": "motorcycle", "motorbike": "motorcycle",
+                "motor": "motorcycle", "bicycle": "bicycle", "bike": "bicycle",
+                "cycling": "bicycle", "vehicle": "vehicle"}
+
+
+def pathway_allows_mode(value, mode):
+    label = MODE_ALIASES.get(str(value or "").strip().lower())
+    # The current admin dataset uses Vehicle as an umbrella for wheeled modes.
+    # Specific car/motorcycle/bicycle labels remain specific when provided.
+    return label == mode or (label == "vehicle" and mode in ("car", "motorcycle", "bicycle"))
 
 
 class RoutingError(ValueError):
@@ -20,13 +35,32 @@ def meters(a, b):
     return 6371000 * 2 * math.asin(min(1, math.sqrt(h)))
 
 
-def walking_routes(nodes, pathways, modes, points, request):
-    if request.get("mode", "walking") != "walking":
-        raise RoutingError("Routing is currently available for Walking only.")
+def project_on_path(position, geometry):
+    """Return closest point and the remaining directed path from that point."""
+    scale = math.cos(math.radians(position[0]))
+    best = None
+    for index, (a, b) in enumerate(zip(geometry, geometry[1:])):
+        dx, dy = (b[1] - a[1]) * scale, b[0] - a[0]
+        px, py = (position[1] - a[1]) * scale, position[0] - a[0]
+        square = dx * dx + dy * dy
+        fraction = max(0, min(1, (px * dx + py * dy) / square)) if square else 0
+        point = (a[0] + dy * fraction, a[1] + (b[1] - a[1]) * fraction)
+        distance = meters(position, point)
+        if best is None or distance < best[0]:
+            best = distance, point, [point, *geometry[index + 1:]]
+    return best
+
+
+def campus_routes(nodes, pathways, modes, points, request):
+    mode = request.get("mode", "walking")
+    if mode not in MODE_SPEEDS:
+        raise RoutingError("Unsupported transport mode.")
+    speed = MODE_SPEEDS[mode]
+    label = MODE_LABELS[mode]
     nodes = {str(n["node_id"]): dict(n, position=coordinate(n.get("latitude"), n.get("longitude")))
              for n in nodes if str(n.get("status", "")).lower() == "active"}
     nodes = {k: n for k, n in nodes.items() if n["position"] is not None}
-    allowed = {str(m["pathway_id"]) for m in modes if str(m.get("mode", "")).lower() == "walking"}
+    allowed = {str(m["pathway_id"]) for m in modes if pathway_allows_mode(m.get("mode"), mode)}
     grouped = {}
     for p in points:
         if str(p.get("status", "")).lower() == "active":
@@ -55,7 +89,7 @@ def walking_routes(nodes, pathways, modes, points, request):
         if length <= 0:
             continue
         edge = {"pathwayId": pid, "distanceMeters": length,
-                "estimatedMinutes": length / 80,
+                "estimatedMinutes": length / speed,
                 "penalty": SHADE_PENALTIES.get(str(p.get("shade", "unknown")).strip().lower(), 1),
                 "name": p.get("name") or "Campus pathway", "points": geometry}
         graph[a].append((b, edge))
@@ -82,13 +116,26 @@ def walking_routes(nodes, pathways, modes, points, request):
             raise RoutingError("The main gate could not be identified uniquely in the routing network.")
     else:
         pos = coordinate(origin.get("latitude"), origin.get("longitude"))
-        candidates = [k for k in graph if graph[k]]
-        if pos is None or not candidates:
-            raise RoutingError("No walking starting point is available.")
-        nearest = min(candidates, key=lambda k: meters(pos, nodes[k]["position"]))
-        if meters(pos, nodes[nearest]["position"]) > 200:
-            raise RoutingError("No walking node within 200 m. Choose a campus building or the main gate.")
-        starts = {nearest}
+        candidates = [(source, dest, edge, project_on_path(pos, edge['points']))
+                      for source in graph for dest, edge in graph[source]] if pos is not None else []
+        if not candidates:
+            raise RoutingError(f"No {label.lower()} starting point is available on permitted pathways.")
+        _, _, nearest_edge, nearest = min(candidates, key=lambda item: item[3][0])
+        if nearest[0] > 200:
+            raise RoutingError(f"No permitted {label.lower()} pathway within 200 m. Choose a campus building or the main gate.")
+        # Snap to a pathway interior without routing back to a distant node.
+        # Only the directions already allowed by the database are connected.
+        start_id = '__current_location__'
+        nodes[start_id] = dict(position=nearest[1], name=nearest_edge['name'])
+        graph[start_id] = []
+        for _, dest, edge, projection in candidates:
+            if edge['pathwayId'] != nearest_edge['pathwayId']:
+                continue
+            geometry = projection[2]
+            length = sum(meters(a, b) for a, b in zip(geometry, geometry[1:]))
+            graph[start_id].append((dest, dict(edge, points=geometry,
+                distanceMeters=length, estimatedMinutes=length / speed)))
+        starts = {start_id}
 
     def solve(shaded):
         costs = {k: 0.0 for k in starts}
@@ -110,7 +157,7 @@ def walking_routes(nodes, pathways, modes, points, request):
                     previous[dest] = (node, edge)
                     heapq.heappush(queue, (updated, dest))
         if found is None:
-            raise RoutingError("No connected walking route to this building is available.")
+            raise RoutingError(f"No connected {label.lower()} route to this building is available on permitted pathways.")
         edges, cursor = [], found
         while cursor in previous:
             cursor, edge = previous[cursor]
@@ -119,12 +166,17 @@ def walking_routes(nodes, pathways, modes, points, request):
         route_points = [nodes[cursor]["position"]]
         for edge in edges:
             route_points.extend(p for p in edge["points"] if p != route_points[-1])
-        return {"type": "comfortableShaded" if shaded else "shortest",
+        return {"type": "comfortableShaded" if shaded else "shortest", "mode": mode,
                 "distanceMeters": sum(e["distanceMeters"] for e in edges),
                 "estimatedMinutes": sum(e["estimatedMinutes"] for e in edges),
                 "weightedCost": costs[found], "pathwayIds": [e["pathwayId"] for e in edges],
                 "pathPoints": route_points, "startNodeId": cursor, "endNodeId": found,
-                "startNodeName": nodes[cursor].get("name") or nodes[cursor].get("node_name") or "Walking node",
+                "startNodeName": nodes[cursor].get("name") or nodes[cursor].get("node_name") or "Route starting point",
                 "steps": [{"instruction": "Follow " + e["name"], "distanceMeters": e["distanceMeters"],
                            "coordinate": e["points"][0]} for e in edges]}
     return {"routes": [solve(False), solve(True)]}
+
+
+def walking_routes(nodes, pathways, modes, points, request):
+    """Compatibility entry point for existing callers."""
+    return campus_routes(nodes, pathways, modes, points, request)

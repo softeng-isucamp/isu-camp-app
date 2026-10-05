@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/campus_models.dart';
+import '../models/navigation_progress.dart';
 import '../services/campus_service.dart';
 
 IconData routeModeIcon(TransportMode mode) {
@@ -16,6 +17,13 @@ IconData routeModeIcon(TransportMode mode) {
       return Icons.directions_walk;
   }
 }
+
+String routeModeLabel(TransportMode mode) => switch (mode) {
+      TransportMode.car => 'Car',
+      TransportMode.motorcycle => 'Motorcycle',
+      TransportMode.bicycle => 'Bicycle',
+      TransportMode.walking => 'Walking',
+    };
 
 class LocationPhoto extends StatelessWidget {
   final String? imageUrl;
@@ -1002,11 +1010,20 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
       _routes = [];
     });
     try {
-      final routes =
-          await CampusService.fetchRoutes(widget.origin, widget.destination);
+      final routes = await CampusService.fetchRoutes(
+          widget.origin, widget.destination,
+          mode: _selectedMode);
       if (!mounted || requestVersion != _routeRequestVersion) return;
       setState(() {
         _routes = routes;
+        if (routes.isEmpty) {
+          _error =
+              'No ${routeModeLabel(_selectedMode).toLowerCase()} route is available on permitted pathways.';
+        } else if (_selectedMode != TransportMode.walking) {
+          _selectedRoute = RouteType.shortest;
+        } else if (!routes.any((route) => route.type == _selectedRoute)) {
+          _selectedRoute = routes.first.type;
+        }
         _loading = false;
       });
     } catch (error) {
@@ -1423,7 +1440,9 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   const SizedBox(height: 10),
 
                   Text(
-                    'CHOOSE ROUTE',
+                    _selectedMode == TransportMode.walking
+                        ? 'CHOOSE ROUTE'
+                        : 'ROUTE',
                     style: GoogleFonts.montserrat(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
@@ -1446,10 +1465,8 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   const SizedBox(height: 16),
 
                   if (!widget.hasSelectedOrigin || _isEditingOrigin)
-                    const Text('Choose a starting point to see walking routes.')
-                  else if (_selectedMode != TransportMode.walking)
-                    const Text(
-                        'Routing is currently available for Walking only.')
+                    Text(
+                        'Choose a starting point to see ${routeModeLabel(_selectedMode).toLowerCase()} routes.')
                   else if (_loading)
                     const Center(child: CircularProgressIndicator())
                   else if (_error != null) ...[
@@ -1459,37 +1476,38 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   ],
                   if (widget.hasSelectedOrigin &&
                       !_isEditingOrigin &&
-                      _selectedMode == TransportMode.walking &&
                       !_loading &&
                       _error == null) ...[
-                    Text(
-                        'Route starts at ${shortest?.startNodeName ?? "walking node"}. Distance is along the mapped paths.'),
-                    // Option 1: Shortest Route Card
-                    _buildRouteCard(
-                      type: RouteType.shortest,
-                      title: 'Shortest Route',
-                      subtitle: 'Most Direct Path',
-                      distance: shortestDist,
-                      walkTime: shortestTime,
-                      icon: Icons.bolt,
-                      iconColor: const Color(0xFFECC700),
-                    ),
+                    if (_selectedMode == TransportMode.walking) ...[
+                      Text(
+                          'Walking route starts at ${shortest?.startNodeName ?? shaded?.startNodeName ?? "route starting point"}. Distance is along permitted mapped paths.'),
+                      _buildRouteCard(
+                        type: RouteType.shortest,
+                        title: 'Shortest Route',
+                        subtitle: 'Most Direct Path',
+                        distance: shortestDist,
+                        walkTime: shortestTime,
+                        icon: Icons.bolt,
+                        iconColor: const Color(0xFFECC700),
+                      ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                    // Option 2: Shaded Path Card (Shaded)
-                    _buildRouteCard(
-                      type: RouteType.comfortableShaded,
-                      title: 'Shaded Path',
-                      subtitle: 'Prefers shaded pathways',
-                      distance: comfortableDist,
-                      walkTime: comfortableTime,
-                      icon: Icons.cloud_outlined,
-                      iconColor: const Color(0xFF0F5A28),
-                    ),
-
+                      // Option 2: Shaded Path Card (Shaded)
+                      _buildRouteCard(
+                        type: RouteType.comfortableShaded,
+                        title: 'Shaded Path',
+                        subtitle: 'Prefers shaded pathways',
+                        distance: comfortableDist,
+                        walkTime: comfortableTime,
+                        icon: Icons.cloud_outlined,
+                        iconColor: const Color(0xFF0F5A28),
+                      ),
+                    ] else ...[
+                      _buildTransportSummary(shortest),
+                    ],
                     const SizedBox(height: 20),
-                  ], // Walking route cards
+                  ],
                   // "View Route" Button
                   SizedBox(
                     width: double.infinity,
@@ -1497,7 +1515,6 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                     child: ElevatedButton(
                       onPressed: !widget.hasSelectedOrigin ||
                               _isEditingOrigin ||
-                              _selectedMode != TransportMode.walking ||
                               _loading ||
                               _error != null ||
                               _routes.isEmpty
@@ -1532,12 +1549,107 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
     );
   }
 
+  Widget _buildTransportSummary(WalkingRoute? route) {
+    const green = Color(0xFF0F5A28);
+    Widget metric(IconData icon, String value, String label) => Expanded(
+          child: Row(
+            children: [
+              Icon(icon, color: green, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(value,
+                        style: GoogleFonts.montserrat(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0B351E))),
+                    Text(label,
+                        style: GoogleFonts.montserrat(
+                            fontSize: 11, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD5E5D9)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x090F5A28), blurRadius: 16, offset: Offset(0, 5)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECF5EE),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(routeModeIcon(_selectedMode), color: green, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${routeModeLabel(_selectedMode)} route',
+                    style: GoogleFonts.montserrat(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: green)),
+                const SizedBox(height: 4),
+                Text(
+                    'Direct route to ${widget.destination.acronym.isNotEmpty ? widget.destination.acronym : widget.destination.name}',
+                    style: GoogleFonts.montserrat(
+                        fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            )),
+          ]),
+          const SizedBox(height: 20),
+          Row(children: [
+            metric(Icons.route_outlined, route?.distance ?? '—', 'Distance'),
+            const SizedBox(width: 12),
+            metric(Icons.schedule, route?.time ?? '—', 'Estimated time'),
+          ]),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1, color: Color(0xFFE7EDE8)),
+          ),
+          Row(children: [
+            const Icon(Icons.trip_origin, size: 16, color: green),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(
+                    'From ${route?.startNodeName ?? "route starting point"}',
+                    style: GoogleFonts.montserrat(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: green))),
+          ]),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModeIcon(TransportMode mode) {
     final isSelected = _selectedMode == mode;
     return GestureDetector(
       onTap: () {
+        if (_selectedMode == mode) return;
         setState(() => _selectedMode = mode);
         widget.onTransportModeChanged?.call(mode);
+        _loadRoutes();
       },
       child: Container(
         padding: const EdgeInsets.all(4),
@@ -1545,10 +1657,13 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
           color: isSelected ? Colors.white24 : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Icon(
-          routeModeIcon(mode),
-          color: isSelected ? Colors.white : Colors.white60,
-          size: 20,
+        child: Tooltip(
+          message: routeModeLabel(mode),
+          child: Icon(
+            routeModeIcon(mode),
+            color: isSelected ? Colors.white : Colors.white60,
+            size: 20,
+          ),
         ),
       ),
     );
@@ -1795,7 +1910,7 @@ class RouteDetailsSheet extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 '${destinationRoom!.title} • ${destinationRoom!.floor}. '
-                'Walking route ends at ${destination.name} entrance.',
+                '${routeModeLabel(selectedTransportMode)} route ends at ${destination.name} entrance.',
                 style: GoogleFonts.montserrat(
                   fontSize: 11,
                   color: Colors.grey.shade700,
@@ -2328,7 +2443,10 @@ class ActiveNavigationHud extends StatelessWidget {
   final RouteType selectedRouteType;
   final TransportMode selectedTransportMode;
   final VoidCallback onEndRoute;
-  final VoidCallback onSimulateArrival;
+  final NavigationProgress? progress;
+  final String? navigationStatus;
+  final VoidCallback onRecenter;
+  final VoidCallback? onRetryRoute;
 
   const ActiveNavigationHud({
     super.key,
@@ -2339,15 +2457,27 @@ class ActiveNavigationHud extends StatelessWidget {
     required this.selectedRouteType,
     required this.selectedTransportMode,
     required this.onEndRoute,
-    required this.onSimulateArrival,
+    this.progress,
+    this.navigationStatus,
+    required this.onRecenter,
+    this.onRetryRoute,
   });
 
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
-    final distance = route.distance;
-    final time = route.time;
-    final heading = 'Follow the highlighted walking path';
+    final distance =
+        '${(progress?.remainingMeters ?? route.distanceMeters).round()} m remaining';
+    final time =
+        '${(progress?.remainingMinutes ?? route.estimatedMinutes).ceil()} min';
+    final heading = navigationStatus ??
+        progress?.instruction ??
+        'Waiting for an accurate GPS position';
+    final arrival = DateTime.now().add(Duration(
+        seconds: ((progress?.remainingMinutes ?? route.estimatedMinutes) * 60)
+            .round()));
+    final arrivalLabel =
+        '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
 
     return Stack(
       children: [
@@ -2378,8 +2508,8 @@ class ActiveNavigationHud extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
-                    Icons.arrow_upward,
+                  child: Icon(
+                    routeInstructionIcon(heading),
                     color: Colors.white,
                     size: 32,
                   ),
@@ -2400,7 +2530,7 @@ class ActiveNavigationHud extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        distance,
+                        '${(progress?.instructionMeters ?? route.distanceMeters).round()} m · $distance',
                         style: GoogleFonts.montserrat(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -2415,12 +2545,12 @@ class ActiveNavigationHud extends StatelessWidget {
           ),
         ),
 
-        // 2. Floating Compass / Arrival Simulator Button
+        // Recenter on the live location; arrival is detected from GPS.
         Positioned(
           right: 18,
           bottom: 230,
           child: GestureDetector(
-            onTap: onSimulateArrival,
+            onTap: onRecenter,
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -2497,7 +2627,7 @@ class ActiveNavigationHud extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'From ${origin.label}',
+                            '${routeModeLabel(selectedTransportMode)} · From ${origin.label} · Arrival $arrivalLabel',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.montserrat(
@@ -2538,7 +2668,7 @@ class ActiveNavigationHud extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: 0.65,
+                    value: progress?.fraction ?? 0,
                     minHeight: 4,
                     backgroundColor: Colors.grey.shade700,
                     valueColor: const AlwaysStoppedAnimation<Color>(
@@ -2548,6 +2678,14 @@ class ActiveNavigationHud extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 20),
+
+                if (onRetryRoute != null)
+                  TextButton.icon(
+                    onPressed: onRetryRoute,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry route',
+                        style: TextStyle(color: Colors.white)),
+                  ),
 
                 // Red "End Route" Button
                 SizedBox(

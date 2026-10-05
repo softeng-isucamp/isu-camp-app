@@ -14,7 +14,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('signup_role_selector')));
     await tester.pumpAndSettle();
     expect(find.text('Student'), findsOneWidget);
-    expect(find.text('Teacher'), findsOneWidget);
+    expect(find.text('Staff'), findsOneWidget);
+    expect(find.text('Teacher'), findsNothing);
     expect(find.text('Visitor'), findsOneWidget);
     await tester.binding.setSurfaceSize(null);
   });

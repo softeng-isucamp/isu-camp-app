@@ -1,5 +1,6 @@
 import random
 import re
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
@@ -177,6 +178,7 @@ class SetPasswordRequest(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
+    user_type: Literal["Student", "Staff", "Visitor"]
 
 
 @router.post("/signup/set-password")
@@ -259,7 +261,8 @@ def set_password(data: SetPasswordRequest):
         .insert(
             {
                 "email": data.email,
-                "password": hashed_password
+                "password": hashed_password,
+                "user_type": data.user_type
             }
         )
         .execute()

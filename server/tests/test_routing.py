@@ -22,6 +22,24 @@ class RoutingTests(unittest.TestCase):
     def solve(self, points=None):
         return walking_routes(self.nodes, self.paths, self.modes, points or [], self.request)['routes']
 
+    def test_current_location_snaps_to_path_interior(self):
+        self.paths = [self.paths[0]]
+        self.request['origin'] = dict(type='currentLocation', latitude=16.7202, longitude=121.69)
+        route = self.solve()[0]
+        self.assertAlmostEqual(route['pathPoints'][0][0], 16.7202)
+        self.assertAlmostEqual(route['distanceMeters'], meters((16.7202, 121.69), (16.7203, 121.69)))
+
+    def test_current_location_respects_one_way_path(self):
+        self.paths = [self.paths[0]]
+        self.nodes[0]['building_id'] = 20
+        self.request.update(destinationBuildingId='20', origin=dict(type='currentLocation', latitude=16.7202, longitude=121.69))
+        with self.assertRaises(RoutingError):
+            self.solve()
+        self.paths[0]['direction'] = 'Two-way'
+        route = self.solve()[0]
+        self.assertEqual(route['endNodeId'], '1')
+        self.assertAlmostEqual(route['distanceMeters'], meters((16.7202, 121.69), (16.7201, 121.69)))
+
     def test_shortest_and_shaded_use_different_weights(self):
         shortest, shaded = self.solve()
         self.assertEqual(shortest['pathwayIds'], ['1'])
@@ -91,9 +109,53 @@ class RoutingTests(unittest.TestCase):
         route = self.solve()[1]
         self.assertAlmostEqual(route['weightedCost'], route['distanceMeters'] * 2)
 
-    def test_vehicle_request_is_rejected(self):
-        self.request['mode'] = 'car'
+    def test_unsupported_mode_is_rejected(self):
+        self.request['mode'] = 'train'
         with self.assertRaises(RoutingError): self.solve()
+
+    def test_vehicle_modes_use_vehicle_paths_and_mode_specific_eta(self):
+        self.paths = [self.paths[0]]
+        self.modes = [dict(pathway_id=1, mode='Vehicle')]
+        for mode, speed in [('car', 350), ('motorcycle', 450), ('bicycle', 220)]:
+            with self.subTest(mode=mode):
+                self.request['mode'] = mode
+                shortest, shaded = self.solve()
+                self.assertEqual(shortest['mode'], mode)
+                self.assertEqual(shortest['pathwayIds'], ['1'])
+                self.assertAlmostEqual(shortest['estimatedMinutes'], shortest['distanceMeters'] / speed)
+                self.assertEqual(shaded['mode'], mode)
+                self.request['origin'] = dict(type='currentLocation', latitude=16.7202, longitude=121.69)
+                partial = self.solve()[0]
+                self.assertAlmostEqual(partial['estimatedMinutes'], partial['distanceMeters'] / speed)
+                self.request['origin'] = dict(type='mainGate')
+        self.request['mode'] = 'walking'
+        with self.assertRaises(RoutingError): self.solve()
+
+    def test_vehicle_modes_cannot_use_walking_only_paths(self):
+        for mode in ('car', 'motorcycle', 'bicycle'):
+            self.request['mode'] = mode
+            with self.subTest(mode=mode), self.assertRaises(RoutingError): self.solve()
+
+    def test_specific_mode_permissions_are_not_shared(self):
+        self.paths = [self.paths[0]]
+        self.modes = [dict(pathway_id=1, mode='Bicycle')]
+        self.request['mode'] = 'bicycle'
+        self.assertEqual(self.solve()[0]['pathwayIds'], ['1'])
+        for mode in ('car', 'motorcycle', 'walking'):
+            self.request['mode'] = mode
+            with self.subTest(mode=mode), self.assertRaises(RoutingError): self.solve()
+
+    def test_vehicle_modes_respect_one_way(self):
+        self.paths = [self.paths[0]]
+        self.modes = [dict(pathway_id=1, mode='Vehicle')]
+        self.nodes[0]['building_id'] = 20
+        for mode in ('car', 'motorcycle', 'bicycle'):
+            self.request.update(mode=mode, destinationBuildingId='20',
+                origin=dict(type='currentLocation', latitude=16.7202, longitude=121.69))
+            self.paths[0]['direction'] = 'One-way'
+            with self.subTest(mode=mode), self.assertRaises(RoutingError): self.solve()
+            self.paths[0]['direction'] = 'Two-way'
+            self.assertEqual(self.solve()[0]['endNodeId'], '1')
 
 
 if __name__ == '__main__': unittest.main()
