@@ -14,6 +14,7 @@ import '../data/campus_dataset.dart';
 import '../models/building_marker_style.dart';
 import '../models/campus_models.dart';
 import '../models/navigation_history.dart';
+import '../models/navigation_camera.dart';
 import '../models/navigation_heading.dart';
 import '../models/navigation_progress.dart';
 import '../services/campus_service.dart';
@@ -95,6 +96,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
   double? _deviceHeading;
   DateTime? _lastNavigationCameraUpdate;
   bool _followNavigationCamera = true;
+  // Last GPS fix motion, used to move the camera smoothly between fixes.
+  double _fixSpeed = 0;
+  double? _fixCourse;
+  DateTime? _fixReceivedAt;
+  final ValueNotifier<double?> _navigationHeading = ValueNotifier(null);
+  Timer? _followTimer;
+  final ValueNotifier<LatLng?> _navigationPosition = ValueNotifier(null);
   int _previewStepIndex = 0;
   String? _historySessionId;
   Future<void> _historyWriteQueue = Future<void>.value();
@@ -229,10 +237,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
       alignment: Alignment.center,
       child: isWalking
           ? Transform.rotate(
+              // Markers turn with the map, so this is the true heading.
               angle: ((_navigationState == NavigationUiState.navigating
-                          ? (_followNavigationCamera
-                              ? 0
-                              : _deviceHeading ?? _movementHeading)
+                          ? _navigationHeading.value ?? _facingHeading
                           : null) ??
                       routeHeading(_routePoints, _selectedOrigin.coordinate) ??
                       0) *
@@ -285,6 +292,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _followTimer?.cancel();
+    _navigationPosition.dispose();
+    _navigationHeading.dispose();
     _positionSubscription?.cancel();
     _gpsWatchdog?.cancel();
     _compassSubscription?.cancel();
@@ -334,10 +344,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
       // Keep an existing GPS stream alive when refreshing the current fix.
       if (_positionSubscription != null) return;
       _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 0,
-        ),
+        locationSettings: _navigationLocationSettings(),
       ).listen(_updateCurrentPosition, onError: (Object error) {
         if (!mounted) return;
         _positionSubscription?.cancel();
@@ -358,15 +365,39 @@ class _MapViewScreenState extends State<MapViewScreen> {
     }
   }
 
+  /// One fix per second. Android otherwise sends one every five seconds,
+  /// which leaves the camera far behind at vehicle speeds.
+  LocationSettings _navigationLocationSettings() {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
+      );
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        activityType: ActivityType.otherNavigation,
+        pauseLocationUpdatesAutomatically: false,
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 0,
+    );
+  }
+
   void _updateCurrentPosition(Position position) {
     if (!mounted) return;
     final next = LatLng(position.latitude, position.longitude);
     _gpsAccuracy = position.accuracy;
     _lastPositionAt = position.timestamp;
     final previous = _currentUserLocation;
+    final moving = position.speed.isFinite && position.speed > 0.5;
     setState(() {
-      if (position.speed.isFinite &&
-          position.speed > 0.5 &&
+      if (moving &&
           position.heading.isFinite &&
           position.heading >= 0 &&
           position.heading < 360) {
@@ -375,6 +406,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
         _movementHeading =
             navigationBearing(previous, next) ?? _movementHeading;
       }
+      _fixSpeed = moving ? position.speed : 0;
+      _fixCourse = moving ? _movementHeading : null;
+      _fixReceivedAt = _navigationNow;
+      _navigationPosition.value = next;
       _currentUserLocation = LatLng(position.latitude, position.longitude);
       _locationStatus = isuEchagueBounds.contains(_currentUserLocation!)
           ? null
@@ -401,6 +436,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   void _startCompassTracking() {
+    _followTimer ??= Timer.periodic(
+        const Duration(milliseconds: 100), (_) => _followTick());
     if (_compassSubscription != null ||
         kIsWeb ||
         (defaultTargetPlatform != TargetPlatform.android &&
@@ -415,12 +452,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
         if (!mounted || heading == null || !heading.isFinite || heading < 0) {
           return;
         }
-        final smoothed = smoothHeading(_deviceHeading, heading);
-        if (_followNavigationCamera) {
-          _deviceHeading = smoothed;
-        } else {
-          setState(() => _deviceHeading = smoothed);
-        }
+        // The marker and camera read this through _navigationHeading.
+        _deviceHeading = smoothHeading(_deviceHeading, heading);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _updateNavigationCamera();
         });
@@ -435,16 +468,44 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void _stopCompassTracking() {
     _compassSubscription?.cancel();
     _compassSubscription = null;
+    _followTimer?.cancel();
+    _followTimer = null;
     _deviceHeading = null;
+    _navigationHeading.value = null;
     _lastNavigationCameraUpdate = null;
   }
 
+  /// Compass when walking or still; GPS course at vehicle speeds.
+  double? get _facingHeading => navigationFacing(
+      compassHeading: _deviceHeading,
+      gpsCourse: _fixCourse ?? _movementHeading,
+      speed: _fixSpeed);
+
+  /// Moves the marker and camera along the current course between GPS fixes.
+  void _followTick() {
+    final fix = _currentUserLocation;
+    final receivedAt = _fixReceivedAt;
+    if (!mounted ||
+        fix == null ||
+        receivedAt == null ||
+        _navigationState != NavigationUiState.navigating) {
+      return;
+    }
+    _navigationPosition.value = predictPosition(fix,
+        speed: _fixSpeed,
+        course: _fixCourse,
+        elapsed: _navigationNow.difference(receivedAt));
+    // Ticks are already paced; the throttle is for frequent compass events.
+    _updateNavigationCamera(force: true);
+  }
+
+  /// Updates the navigation heading and, while following, turns the map so
+  /// that heading points up.
   void _updateNavigationCamera({bool force = false}) {
     final location = _currentUserLocation;
     if (!mounted ||
         location == null ||
-        _navigationState != NavigationUiState.navigating ||
-        !_followNavigationCamera) {
+        _navigationState != NavigationUiState.navigating) {
       return;
     }
     final now = DateTime.now();
@@ -455,11 +516,14 @@ class _MapViewScreenState extends State<MapViewScreen> {
       return;
     }
     _lastNavigationCameraUpdate = now;
-    final heading = _deviceHeading ??
-        _movementHeading ??
-        routeHeading(_routePoints, location) ??
-        0;
-    _mapController.moveAndRotate(location, 18.5, heading);
+    final target =
+        _facingHeading ?? routeHeading(_routePoints, location) ?? 0;
+    final heading =
+        smoothHeading(_navigationHeading.value, target, factor: 0.35);
+    _navigationHeading.value = heading;
+    if (!_followNavigationCamera) return;
+    _mapController.moveAndRotate(_navigationPosition.value ?? location, 18.5,
+        cameraRotationForHeading(heading));
   }
 
   void _resumeNavigationFollowing() {
@@ -1042,18 +1106,25 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 ),
 
                 if (_showsTransportOriginMarker)
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: _navigationState == NavigationUiState.navigating
-                            ? _currentUserLocation ?? _selectedOrigin.coordinate
-                            : _walkingRoute?.points.first ??
-                                _selectedOrigin.coordinate,
-                        width: 42,
-                        height: 42,
-                        child: _buildTransportOriginMarker(),
-                      ),
-                    ],
+                  ListenableBuilder(
+                    listenable: Listenable.merge(
+                        [_navigationPosition, _navigationHeading]),
+                    builder: (context, _) => MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _navigationState ==
+                                  NavigationUiState.navigating
+                              ? _navigationPosition.value ??
+                                  _currentUserLocation ??
+                                  _selectedOrigin.coordinate
+                              : _walkingRoute?.points.first ??
+                                  _selectedOrigin.coordinate,
+                          width: 42,
+                          height: 42,
+                          child: _buildTransportOriginMarker(),
+                        ),
+                      ],
+                    ),
                   ),
 
                 if (_navigationState == NavigationUiState.routePreview &&
