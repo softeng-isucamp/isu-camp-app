@@ -1138,415 +1138,422 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
     final shortestTime = shortest?.time ?? '—';
     final comfortableDist = shaded?.distance ?? '—';
     final comfortableTime = shaded?.time ?? '—';
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFFE5E7EB),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Top Dark Green Header Box: Route Modes & Origin/Destination Box
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0B351E),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Transport Mode Selector Icons
-                  Row(
-                    children: [
-                      Text(
-                        'Route Modes',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 11.5,
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w500,
+    return LayoutBuilder(builder: (context, constraints) {
+      return SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              minHeight:
+                  constraints.hasBoundedHeight ? constraints.maxHeight : 0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top Dark Green Header Box: Route Modes & Origin/Destination Box
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF244B3E),
+                  borderRadius: BorderRadius.all(Radius.circular(22)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Transport Mode Selector Icons
+                    Row(
+                      children: [
+                        Text(
+                          'Route Modes',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 11.5,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 14),
-                      _buildModeIcon(TransportMode.car),
-                      const SizedBox(width: 12),
-                      _buildModeIcon(TransportMode.motorcycle),
-                      const SizedBox(width: 12),
-                      _buildModeIcon(TransportMode.bicycle),
-                      const SizedBox(width: 12),
-                      _buildModeIcon(TransportMode.walking),
-                    ],
-                  ),
+                        const SizedBox(width: 14),
+                        _buildModeIcon(TransportMode.car),
+                        const SizedBox(width: 12),
+                        _buildModeIcon(TransportMode.motorcycle),
+                        const SizedBox(width: 12),
+                        _buildModeIcon(TransportMode.bicycle),
+                        const SizedBox(width: 12),
+                        _buildModeIcon(TransportMode.walking),
+                      ],
+                    ),
 
-                  const SizedBox(height: 14),
+                    const SizedBox(height: 6),
 
-                  // Origin & Destination Container
-                  Row(
-                    children: [
-                      Column(
-                        children: [
-                          Container(
-                            width: 16,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF22C55E),
-                                width: 3.5,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 2,
-                            height: 28,
-                            color: Colors.white38,
-                          ),
-                          const Icon(
-                            Icons.location_on,
-                            color: Colors.grey,
-                            size: 18,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                    // Origin & Destination Container
+                    Row(
+                      children: [
+                        Column(
                           children: [
                             Container(
-                              height: 36,
+                              width: 16,
+                              height: 16,
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: TextField(
-                                key: const ValueKey('route-origin-field'),
-                                controller: _originSearchController,
-                                onTap: () => setState(() {
-                                  _showOriginPicker = true;
-                                  _originSearchController.selection =
-                                      TextSelection(
-                                    baseOffset: 0,
-                                    extentOffset:
-                                        _originSearchController.text.length,
-                                  );
-                                }),
-                                onChanged: (query) => setState(() {
-                                  _isEditingOrigin = true;
-                                  _showOriginPicker = true;
-                                  _showBuildings = query.trim().isNotEmpty;
-                                }),
-                                textInputAction: TextInputAction.search,
-                                maxLines: 1,
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 13,
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade700,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFF22C55E),
+                                  width: 3.5,
                                 ),
-                                decoration: InputDecoration(
-                                  hintText: 'Choose starting point',
-                                  hintStyle: GoogleFonts.montserrat(
+                              ),
+                            ),
+                            Container(
+                              width: 2,
+                              height: 28,
+                              color: Colors.white38,
+                            ),
+                            const Icon(
+                              Icons.location_on,
+                              color: Colors.grey,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Container(
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: TextField(
+                                  key: const ValueKey('route-origin-field'),
+                                  controller: _originSearchController,
+                                  onTap: () => setState(() {
+                                    _showOriginPicker = true;
+                                    _originSearchController.selection =
+                                        TextSelection(
+                                      baseOffset: 0,
+                                      extentOffset:
+                                          _originSearchController.text.length,
+                                    );
+                                  }),
+                                  onChanged: (query) => setState(() {
+                                    _isEditingOrigin = true;
+                                    _showOriginPicker = true;
+                                    _showBuildings = query.trim().isNotEmpty;
+                                  }),
+                                  textInputAction: TextInputAction.search,
+                                  maxLines: 1,
+                                  style: GoogleFonts.montserrat(
                                     fontSize: 13,
                                     fontStyle: FontStyle.italic,
                                     color: Colors.grey.shade700,
                                   ),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 9),
-                                  suffixIconConstraints: const BoxConstraints(
-                                      minWidth: 36, minHeight: 36),
-                                  suffixIcon: IconButton(
-                                    padding: EdgeInsets.zero,
-                                    icon: const Icon(Icons.chevron_right,
-                                        size: 18, color: Colors.grey),
-                                    onPressed: () => setState(() {
-                                      if (_showOriginPicker) {
-                                        _restoreOriginField();
-                                      } else {
-                                        _showOriginPicker = true;
-                                      }
-                                    }),
+                                  decoration: InputDecoration(
+                                    hintText: 'Your Location',
+                                    hintStyle: GoogleFonts.montserrat(
+                                      fontSize: 13,
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 9),
+                                    suffixIconConstraints: const BoxConstraints(
+                                        minWidth: 36, minHeight: 36),
+                                    suffixIcon: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(Icons.chevron_right,
+                                          size: 18, color: Colors.grey),
+                                      onPressed: () => setState(() {
+                                        if (_showOriginPicker) {
+                                          _restoreOriginField();
+                                        } else {
+                                          _showOriginPicker = true;
+                                        }
+                                      }),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              height: 36,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
+                              const SizedBox(height: 8),
+                              Container(
+                                height: 36,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  widget.destination.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 13,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
                               ),
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                widget.destination.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_showOriginPicker) ...[
+                      const SizedBox(height: 10),
+                      _originOption(
+                        icon: widget.isLocating
+                            ? Icons.gps_fixed
+                            : Icons.my_location,
+                        label: 'Use My Current Location',
+                        selected: widget.hasSelectedOrigin &&
+                            widget.origin.type ==
+                                NavigationOriginType.currentLocation,
+                        error: _attemptedCurrentLocation &&
+                            !widget.isLocating &&
+                            !widget.isCurrentLocationInsideCampus,
+                        subtitle: widget.isLocating
+                            ? 'Detecting your location...'
+                            : _attemptedCurrentLocation &&
+                                    widget.locationStatus != null
+                                ? widget.locationStatus
+                                : 'Available only inside ISU Echague.',
+                        onTap: () async {
+                          setState(() {
+                            _attemptedCurrentLocation = true;
+                            _showBuildings = false;
+                          });
+                          FocusScope.of(context).unfocus();
+                          await widget.onUseCurrentLocation?.call();
+                          if (mounted &&
+                              widget.hasSelectedOrigin &&
+                              widget.origin.type ==
+                                  NavigationOriginType.currentLocation) {
+                            setState(_restoreOriginField);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      _originOption(
+                        icon: Icons.apartment,
+                        label: 'Others',
+                        subtitle: 'Choose another campus building.',
+                        trailing: Icon(
+                          _showBuildings
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          color: const Color(0xFF0F751B),
+                        ),
+                        onTap: () => setState(() {
+                          _showBuildings = !_showBuildings;
+                        }),
+                      ),
+                      if (_showBuildings) ...[
+                        const SizedBox(height: 6),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              for (final origin in _matchingBuildings)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 5),
+                                  child: _originOption(
+                                    icon: Icons.location_on_outlined,
+                                    label: origin.label,
+                                    selected: widget.hasSelectedOrigin &&
+                                        widget.origin.id == origin.id,
+                                    onTap: () {
+                                      widget.onOriginSelected?.call(origin);
+                                      setState(_restoreOriginField);
+                                    },
+                                  ),
+                                ),
+                              if (_matchingBuildings.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Text(
+                                    !_isEditingOrigin ||
+                                            _originSearchController.text
+                                                .trim()
+                                                .isEmpty
+                                        ? 'No other campus buildings are available.'
+                                        : 'No buildings found.',
+                                    style: GoogleFonts.montserrat(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+
+              // Keep a visible map gap between the origin panel and route chooser.
+              Container(
+                margin: const EdgeInsets.only(top: 28),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD9D9D9),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 5,
+                        offset: Offset(0, -2)),
+                  ],
+                ),
+                padding: EdgeInsets.fromLTRB(
+                    20, 8, 20, 36 + MediaQuery.of(context).padding.bottom),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: widget.onBack,
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.arrow_back,
+                                size: 18,
+                                color: Color(0xFF0F4D20),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Back',
                                 style: GoogleFonts.montserrat(
                                   fontSize: 13,
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF0F4D20),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (_showOriginPicker) ...[
-                    const SizedBox(height: 10),
-                    _originOption(
-                      icon: widget.isLocating
-                          ? Icons.gps_fixed
-                          : Icons.my_location,
-                      label: 'Use My Current Location',
-                      selected: widget.hasSelectedOrigin &&
-                          widget.origin.type ==
-                              NavigationOriginType.currentLocation,
-                      error: _attemptedCurrentLocation &&
-                          !widget.isLocating &&
-                          !widget.isCurrentLocationInsideCampus,
-                      subtitle: widget.isLocating
-                          ? 'Detecting your location...'
-                          : _attemptedCurrentLocation &&
-                                  widget.locationStatus != null
-                              ? widget.locationStatus
-                              : 'Available only inside ISU Echague.',
-                      onTap: () async {
-                        setState(() {
-                          _attemptedCurrentLocation = true;
-                          _showBuildings = false;
-                        });
-                        FocusScope.of(context).unfocus();
-                        await widget.onUseCurrentLocation?.call();
-                        if (mounted &&
-                            widget.hasSelectedOrigin &&
-                            widget.origin.type ==
-                                NavigationOriginType.currentLocation) {
-                          setState(_restoreOriginField);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    _originOption(
-                      icon: Icons.apartment,
-                      label: 'Others',
-                      subtitle: 'Choose another campus building.',
-                      trailing: Icon(
-                        _showBuildings ? Icons.expand_less : Icons.expand_more,
-                        color: const Color(0xFF0F751B),
-                      ),
-                      onTap: () => setState(() {
-                        _showBuildings = !_showBuildings;
-                      }),
-                    ),
-                    if (_showBuildings) ...[
-                      const SizedBox(height: 6),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 150),
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: [
-                            for (final origin in _matchingBuildings)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 5),
-                                child: _originOption(
-                                  icon: Icons.location_on_outlined,
-                                  label: origin.label,
-                                  selected: widget.hasSelectedOrigin &&
-                                      widget.origin.id == origin.id,
-                                  onTap: () {
-                                    widget.onOriginSelected?.call(origin);
-                                    setState(_restoreOriginField);
-                                  },
-                                ),
-                              ),
-                            if (_matchingBuildings.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Text(
-                                  !_isEditingOrigin ||
-                                          _originSearchController.text
-                                              .trim()
-                                              .isEmpty
-                                      ? 'No other campus buildings are available.'
-                                      : 'No buildings found.',
-                                  style: GoogleFonts.montserrat(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700),
-                                ),
-                              ),
-                          ],
+                        const Spacer(),
+                        TextButton(
+                          onPressed: widget.onCancel,
+                          child: const Text('Cancel'),
                         ),
-                      ),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-
-            // Bottom Content: CHOOSE ROUTE Options
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: widget.onBack,
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.arrow_back,
-                              size: 18,
-                              color: Color(0xFF0F4D20),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Back',
-                              style: GoogleFonts.montserrat(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF0F4D20),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: widget.onCancel,
-                        child: const Text('Cancel'),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Text(
-                    _selectedMode == TransportMode.walking
-                        ? 'CHOOSE ROUTE'
-                        : 'ROUTE',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.6,
-                      color: const Color(0xFF0B351E),
+                      ],
                     ),
-                  ),
 
-                  if (widget.destinationRoom != null) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 2),
+
                     Text(
-                      '${widget.destinationRoom!.title} • ${widget.destinationRoom!.floor}. '
-                      'Mapped route ends at the building entrance.',
+                      _selectedMode == TransportMode.walking
+                          ? 'CHOOSE ROUTE'
+                          : 'ROUTE',
                       style: GoogleFonts.montserrat(
-                        fontSize: 11,
-                        color: Colors.grey.shade700,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        color: const Color(0xFF0B351E),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 16),
 
-                  if (!widget.hasSelectedOrigin || _isEditingOrigin)
-                    Text(
-                        'Choose a starting point to see ${routeModeLabel(_selectedMode).toLowerCase()} routes.')
-                  else if (_loading)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_error != null) ...[
-                    Text(_error!),
-                    TextButton(
-                        onPressed: _loadRoutes, child: const Text('Retry')),
-                  ],
-                  if (widget.hasSelectedOrigin &&
-                      !_isEditingOrigin &&
-                      !_loading &&
-                      _error == null) ...[
-                    if (_selectedMode == TransportMode.walking) ...[
+                    if (widget.destinationRoom != null) ...[
+                      const SizedBox(height: 8),
                       Text(
-                          'Walking route starts at ${shortest?.startNodeName ?? shaded?.startNodeName ?? "route starting point"}. Distance is along permitted mapped paths.'),
-                      _buildRouteCard(
-                        type: RouteType.shortest,
-                        title: 'Shortest Route',
-                        subtitle: 'Most Direct Path',
-                        distance: shortestDist,
-                        walkTime: shortestTime,
-                        icon: Icons.bolt,
-                        iconColor: const Color(0xFFECC700),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Option 2: Shaded Path Card (Shaded)
-                      _buildRouteCard(
-                        type: RouteType.comfortableShaded,
-                        title: 'Shaded Path',
-                        subtitle: 'Prefers shaded pathways',
-                        distance: comfortableDist,
-                        walkTime: comfortableTime,
-                        icon: Icons.cloud_outlined,
-                        iconColor: const Color(0xFF0F5A28),
-                      ),
-                    ] else ...[
-                      _buildTransportSummary(shortest),
-                    ],
-                    const SizedBox(height: 20),
-                  ],
-                  // "View Route" Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: !widget.hasSelectedOrigin ||
-                              _isEditingOrigin ||
-                              _loading ||
-                              _error != null ||
-                              _routes.isEmpty
-                          ? null
-                          : () => widget.onViewRoute(
-                              _routes
-                                  .firstWhere((r) => r.type == _selectedRoute),
-                              _selectedMode),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F5A28),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: Text(
-                        'View Route',
+                        '${widget.destinationRoom!.title} • ${widget.destinationRoom!.floor}. '
+                        'Mapped route ends at the building entrance.',
                         style: GoogleFonts.montserrat(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          fontSize: 11,
+                          color: Colors.grey.shade700,
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                    ],
+                    const SizedBox(height: 16),
+
+                    if (!widget.hasSelectedOrigin || _isEditingOrigin)
+                      Text(
+                          'Choose a starting point to see ${routeModeLabel(_selectedMode).toLowerCase()} routes.')
+                    else if (_loading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_error != null) ...[
+                      Text(_error!),
+                      TextButton(
+                          onPressed: _loadRoutes, child: const Text('Retry')),
+                    ],
+                    if (widget.hasSelectedOrigin &&
+                        !_isEditingOrigin &&
+                        !_loading &&
+                        _error == null) ...[
+                      if (_selectedMode == TransportMode.walking) ...[
+                        _buildRouteCard(
+                          type: RouteType.shortest,
+                          title: 'Shortest Route',
+                          subtitle: 'Most Direct Path',
+                          distance: shortestDist,
+                          walkTime: shortestTime,
+                          icon: Icons.thunderstorm_outlined,
+                          iconColor: const Color(0xFFECC700),
+                        ),
+
+                        const SizedBox(height: 6),
+
+                        // Option 2: Shaded Path Card (Shaded)
+                        _buildRouteCard(
+                          type: RouteType.comfortableShaded,
+                          title: 'Shaded Path',
+                          subtitle: 'Shaded, Wider',
+                          distance: comfortableDist,
+                          walkTime: comfortableTime,
+                          icon: Icons.cloud_outlined,
+                          iconColor: const Color(0xFF0F5A28),
+                        ),
+                      ] else ...[
+                        _buildTransportSummary(shortest),
+                      ],
+                      const SizedBox(height: 48),
+                    ],
+                    // "View Route" Button
+                    Center(
+                        child: SizedBox(
+                      width: 220,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: !widget.hasSelectedOrigin ||
+                                _isEditingOrigin ||
+                                _loading ||
+                                _error != null ||
+                                _routes.isEmpty
+                            ? null
+                            : () => widget.onViewRoute(
+                                _routes.firstWhere(
+                                    (r) => r.type == _selectedRoute),
+                                _selectedMode),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF285500),
+                          side: const BorderSide(color: Color(0xFF8BA55B)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 2,
+                        ),
+                        child: Text(
+                          'View Route',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildTransportSummary(WalkingRoute? route) {
@@ -1688,7 +1695,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isSelected ? const Color(0xFF1B62D4) : Colors.transparent,
+            color: Colors.transparent,
             width: 1.5,
           ),
           boxShadow: [
@@ -1709,7 +1716,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
+                    color: const Color(0xFFEDEBEA),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(icon, color: iconColor, size: 28),
@@ -1785,7 +1792,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                 ),
                 const SizedBox(width: 18),
                 Text(
-                  'Est. Time: ',
+                  'Est. Walk: ',
                   style: GoogleFonts.montserrat(
                     fontSize: 11.5,
                     color: Colors.grey.shade700,
