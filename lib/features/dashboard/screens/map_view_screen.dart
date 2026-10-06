@@ -1249,7 +1249,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
               ),
             ),
 
-          if (!_isNavigationActive)
+          if (!_isNavigationActive &&
+              _navigationState != NavigationUiState.chooseRoute)
             Positioned(
               key: const ValueKey('map-action-buttons'),
               right: 16,
@@ -1309,7 +1310,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
             ),
 
           // 2. Dark Green Header Bar
-          if (!_isNavigationActive)
+          if (!_isNavigationActive &&
+              _navigationState != NavigationUiState.chooseRoute)
             Positioned(
               key: const ValueKey('map-header'),
               top: 0,
@@ -1641,7 +1643,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
             ),
 
           // 3. Bottom Sheet Overlay State Machine
-          if (_locationStatus != null && !_isNavigationActive)
+          if (_locationStatus != null &&
+              !_isNavigationActive &&
+              _navigationState != NavigationUiState.chooseRoute)
             Positioned(
               top: topPadding + 170,
               left: 16,
@@ -1713,9 +1717,19 @@ class _MapViewScreenState extends State<MapViewScreen> {
               ),
             ),
 
+          if (_navigationState == NavigationUiState.chooseRoute)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: topPadding + 100,
+              child: const ColoredBox(color: Color(0xFF0B351E)),
+            ),
+
           if (_selectedBuilding != null &&
               _navigationState == NavigationUiState.chooseRoute)
             Positioned(
+              top: topPadding + 32,
               bottom: 0,
               left: 0,
               right: 0,
