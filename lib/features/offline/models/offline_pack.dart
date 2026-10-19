@@ -30,6 +30,9 @@ class OfflinePackStatus {
   final int completedFiles;
   final int totalFiles;
   final int bytesOnDisk;
+
+  /// Received bytes in files that have not yet been committed to disk.
+  final int bytesInFlight;
   final DateTime? installedAt;
   final DateTime? lastCheckedAt;
 
@@ -43,6 +46,7 @@ class OfflinePackStatus {
     this.completedFiles = 0,
     this.totalFiles = 0,
     this.bytesOnDisk = 0,
+    this.bytesInFlight = 0,
     this.installedAt,
     this.lastCheckedAt,
     this.message,
@@ -61,13 +65,13 @@ class OfflinePackStatus {
   double get progress =>
       totalFiles == 0 ? 0 : (completedFiles / totalFiles).clamp(0.0, 1.0);
 
-  String get sizeLabel {
-    if (bytesOnDisk <= 0) return '0 MB';
-    final megabytes = bytesOnDisk / (1024 * 1024);
-    return megabytes < 10
-        ? '${megabytes.toStringAsFixed(1)} MB'
-        : '${megabytes.round()} MB';
-  }
+  int get downloadedBytes => bytesOnDisk + bytesInFlight;
+
+  String get downloadSizeLabel => _formatBytes(downloadedBytes);
+  String get sizeLabel => _formatBytes(bytesOnDisk);
+
+  static String _formatBytes(int bytes) =>
+      '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 
   OfflinePackStatus copyWith({
     OfflinePackState? state,
@@ -76,6 +80,7 @@ class OfflinePackStatus {
     int? completedFiles,
     int? totalFiles,
     int? bytesOnDisk,
+    int? bytesInFlight,
     DateTime? installedAt,
     DateTime? lastCheckedAt,
     String? message,
@@ -85,13 +90,15 @@ class OfflinePackStatus {
   }) =>
       OfflinePackStatus(
         state: state ?? this.state,
-        installedVersion:
-            clearInstalledVersion ? null : installedVersion ?? this.installedVersion,
+        installedVersion: clearInstalledVersion
+            ? null
+            : installedVersion ?? this.installedVersion,
         updateVersion:
             clearUpdateVersion ? null : updateVersion ?? this.updateVersion,
         completedFiles: completedFiles ?? this.completedFiles,
         totalFiles: totalFiles ?? this.totalFiles,
         bytesOnDisk: bytesOnDisk ?? this.bytesOnDisk,
+        bytesInFlight: bytesInFlight ?? this.bytesInFlight,
         installedAt: installedAt ?? this.installedAt,
         lastCheckedAt: lastCheckedAt ?? this.lastCheckedAt,
         message: clearMessage ? null : message ?? this.message,

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:isu_camp_app/features/offline/screens/offline_map_screen.dart';
+import 'package:isu_camp_app/features/offline/models/offline_pack.dart';
 import 'package:isu_camp_app/features/offline/services/offline_file_store.dart';
 import 'package:isu_camp_app/features/offline/services/offline_pack_service.dart';
 
@@ -35,6 +36,27 @@ Map<String, dynamic> _bundle(String version) => {
         'points': [],
       },
     };
+
+class _ProgressPack extends OfflinePackService {
+  OfflinePackStatus snapshot = const OfflinePackStatus(
+    state: OfflinePackState.downloading,
+    bytesOnDisk: 13 * 1024 * 1024,
+    bytesInFlight: 512 * 1024,
+    completedFiles: 123,
+    totalFiles: 456,
+  );
+
+  @override
+  OfflinePackStatus get status => snapshot;
+
+  @override
+  Future<void> load() async {}
+
+  void show(OfflinePackStatus status) {
+    snapshot = status;
+    notifyListeners();
+  }
+}
 
 void main() {
   late Directory root;
@@ -91,6 +113,46 @@ void main() {
       .widget<Text>(find.byKey(const ValueKey('offline-pack-subtitle')))
       .data!;
 
+  testWidgets('download and pause show MB without file counts or percentages',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final pack = _ProgressPack();
+    await tester.pumpWidget(MaterialApp(home: OfflineMapScreen(pack: pack)));
+    await tester.pump();
+
+    expect(subtitle(tester), '13.5 MB downloaded');
+    expect(
+        tester
+            .widget<LinearProgressIndicator>(
+                find.byType(LinearProgressIndicator))
+            .value,
+        isNull);
+
+    pack.show(pack.status.copyWith(bytesInFlight: 1024 * 1024));
+    await tester.pump();
+    expect(subtitle(tester), '14.0 MB downloaded');
+
+    pack.show(pack.status.copyWith(
+      state: OfflinePackState.incomplete,
+      bytesOnDisk: 14 * 1024 * 1024,
+      bytesInFlight: 0,
+    ));
+    await tester.pump();
+    expect(subtitle(tester), '14.0 MB downloaded • Paused');
+    expect(
+        tester
+            .widget<LinearProgressIndicator>(
+                find.byType(LinearProgressIndicator))
+            .value,
+        0);
+    expect(find.byKey(const ValueKey('offline-resume-button')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    pack.dispose();
+  });
+
   testWidgets('with nothing stored the screen offers a download',
       (tester) async {
     final pack = serviceFor('v1');
@@ -144,7 +206,8 @@ void main() {
     expect(pack.buildings, isNotNull);
     expect(subtitle(tester), contains('Offline Ready'));
     expect(requests.where((url) => url.endsWith('/offline/bundle')), isEmpty);
-    expect(requests.where((url) => url.contains('tile.openstreetmap')), isEmpty);
+    expect(
+        requests.where((url) => url.contains('tile.openstreetmap')), isEmpty);
   });
 
   testWidgets('an unfinished download can be resumed', (tester) async {

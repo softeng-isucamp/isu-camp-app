@@ -321,7 +321,8 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
-                value: status.totalFiles == 0 ? null : status.progress,
+                // A file-count ratio is not a byte total. Keep paused bars still.
+                value: status.isBusy ? null : 0,
                 minHeight: 6,
                 backgroundColor: Colors.white24,
                 valueColor: AlwaysStoppedAnimation<Color>(
@@ -352,12 +353,9 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
       case OfflinePackState.absent:
         return 'Map, campus data, and photos';
       case OfflinePackState.downloading:
-        return status.totalFiles == 0
-            ? 'Preparing download...'
-            : '${status.completedFiles} / ${status.totalFiles} files • '
-                '${(status.progress * 100).round()}%';
+        return '${status.downloadSizeLabel} downloaded';
       case OfflinePackState.incomplete:
-        return '${status.completedFiles} / ${status.totalFiles} files • Paused';
+        return '${status.sizeLabel} downloaded • Paused';
       case OfflinePackState.ready:
         return '${status.sizeLabel} • Offline Ready';
     }
@@ -450,7 +448,8 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
       case OfflinePackState.ready:
         return IconButton(
           key: const ValueKey('offline-delete-button'),
-          icon: const Icon(Icons.delete_outline, color: Colors.white60, size: 24),
+          icon:
+              const Icon(Icons.delete_outline, color: Colors.white60, size: 24),
           tooltip: 'Delete offline map',
           onPressed: _confirmDelete,
         );
@@ -468,7 +467,8 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
                 : checked == null
                     ? 'Updates have not been checked yet.'
                     : 'Last checked ${_timeAgo(checked)}.',
-            style: GoogleFonts.montserrat(fontSize: 11.5, color: Colors.white60),
+            style:
+                GoogleFonts.montserrat(fontSize: 11.5, color: Colors.white60),
           ),
         ),
         if (status.installedVersion != null)

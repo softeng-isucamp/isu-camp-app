@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -22,7 +23,8 @@ const String _baseUrl = 'http://api.test';
 const String _buildingPhoto = '$_baseUrl/campus/photos/building/4';
 const String _roomPhoto = '$_baseUrl/campus/photos/location/9';
 
-Map<String, dynamic> _bundle(String version, {String name = 'Admin Building'}) =>
+Map<String, dynamic> _bundle(String version,
+        {String name = 'Admin Building'}) =>
     {
       'version': version,
       'generatedAt': '2026-10-14T00:00:00Z',
@@ -176,6 +178,70 @@ void main() {
     expect(service.tileImage(19, 1, 1), isNull);
   });
 
+  for (final fail in [false, true]) {
+    test(
+        'live chunks are counted once and ${fail ? 'discarded on failure' : 'committed on success'}',
+        () async {
+      final firstChunkSeen = Completer<void>();
+      final finishResponse = Completer<void>();
+      late OfflinePackService service;
+      var liveBytes = 0;
+      Stream<List<int>> photo() async* {
+        yield List.filled(128 * 1024, 1);
+        await firstChunkSeen.future;
+        await finishResponse.future;
+        if (fail) throw http.ClientException('Connection lost');
+        yield List.filled(128 * 1024, 2);
+      }
+
+      service = OfflinePackService(
+        store: OfflineFileStore(rootPath: root.path),
+        maxTileZoom: 15,
+        baseUrl: () => _baseUrl,
+        client: MockClient.streaming((request, _) async {
+          if (request.url.path.endsWith('/offline/bundle')) {
+            return http.StreamedResponse(
+                Stream.value(utf8.encode(jsonEncode(_bundle('v1')))), 200);
+          }
+          if (request.url.toString() == _buildingPhoto) {
+            return http.StreamedResponse(photo(), 200);
+          }
+          return http.StreamedResponse(Stream.value([1, 2, 3]), 200);
+        }),
+      );
+      service.addListener(() {
+        if (service.status.bytesInFlight >= 128 * 1024 &&
+            !firstChunkSeen.isCompleted) {
+          liveBytes = service.status.downloadedBytes;
+          firstChunkSeen.complete();
+        }
+      });
+      final download = service.download();
+      await firstChunkSeen.future.timeout(const Duration(seconds: 5));
+      expect(service.status.isBusy, isTrue);
+      expect(service.photoImage(_buildingPhoto), isNull,
+          reason: 'progress must advance before the file is saved');
+      finishResponse.complete();
+      await download;
+      expect(service.status.bytesInFlight, 0);
+      expect(service.status.state,
+          fail ? OfflinePackState.incomplete : OfflinePackState.ready);
+      if (fail) {
+        expect(service.status.bytesOnDisk, lessThan(liveBytes));
+        expect(service.photoImage(_buildingPhoto), isNull);
+      } else {
+        // One bundle, two photos and nine tiles; metadata is small.
+        final payloadBytes = utf8.encode(jsonEncode(_bundle('v1'))).length +
+            256 * 1024 +
+            3 +
+            9 * 3;
+        expect(service.status.bytesOnDisk,
+            inInclusiveRange(payloadBytes, payloadBytes + 1024));
+        expect(service.photoImage(_buildingPhoto), isNotNull);
+      }
+    });
+  }
+
   test('a stored photo is reused when only the API host changes', () async {
     final service = serviceFor(backend('v1'));
     await service.download();
@@ -283,12 +349,20 @@ void main() {
     expect(service.status.completedFiles, lessThan(_totalFiles));
     expect(service.status.completedFiles, greaterThan(_photoCount));
     expect(service.status.message, contains('Paused'));
+    final savedBytes = service.status.bytesOnDisk;
+    expect(service.status.bytesInFlight, 0);
     final downloadedSoFar = recorder.tileRequests;
     expect(downloadedSoFar, lessThan(_tileCount));
 
     recorder.requests.clear();
+    final resumedBytes = <int>[];
+    service.addListener(() {
+      if (service.status.isBusy)
+        resumedBytes.add(service.status.downloadedBytes);
+    });
     await service.download();
 
+    expect(resumedBytes.first, savedBytes);
     expect(service.status.state, OfflinePackState.ready);
     expect(service.status.completedFiles, _totalFiles);
     expect(recorder.photoRequests, 0, reason: 'photos were already stored');
@@ -313,8 +387,8 @@ void main() {
 
   test('a failing tile host stops the download instead of hammering it',
       () async {
-    final service = serviceFor(backend('v1',
-        onTile: (_) => http.Response('rate limited', 429)));
+    final service = serviceFor(
+        backend('v1', onTile: (_) => http.Response('rate limited', 429)));
 
     await service.download();
 
@@ -399,9 +473,10 @@ void main() {
       );
       expect(routes, hasLength(2));
       expect(routes.first.distanceMeters, closeTo(222.39, 0.01));
-    }, () => MockClient((request) async {
-      throw http.ClientException('Connection failed', request.url);
-    }));
+    },
+        () => MockClient((request) async {
+              throw http.ClientException('Connection failed', request.url);
+            }));
   });
 
   test('a real backend error is reported, not replaced by stored data',
@@ -434,7 +509,7 @@ void main() {
     expect(campusTileUrlTemplate, contains('{z}/{x}/{y}'));
     expect(offlinePhotoPath(_buildingPhoto),
         offlinePhotoPath('https://elsewhere.test/campus/photos/building/4'));
-    expect(offlinePhotoPath(_buildingPhoto),
-        isNot(offlinePhotoPath(_roomPhoto)));
+    expect(
+        offlinePhotoPath(_buildingPhoto), isNot(offlinePhotoPath(_roomPhoto)));
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -72,6 +73,10 @@ class OfflinePackService extends ChangeNotifier {
   Map<String, dynamic>? _bundle;
   List<CampusBuilding>? _buildings;
   bool _pauseRequested = false;
+  final Map<String, int> _receivedBytes = {};
+  final Stopwatch _progressClock = Stopwatch()..start();
+  int _lastProgressAt = -100;
+  Timer? _progressTimer;
   Future<void>? _activeDownload;
   Future<void>? _activeDelete;
 
@@ -189,17 +194,18 @@ class OfflinePackService extends ChangeNotifier {
 
     final Map<String, dynamic> bundle;
     try {
-      final response = await _http
-          .get(Uri.parse('${_baseUrl()}/campus/offline/bundle'))
-          .timeout(const Duration(seconds: 60));
-      if (response.statusCode != 200) {
-        throw const _DownloadFailure(
-            'The offline map is not available right now. Try again later.');
-      }
-      bundle = jsonDecode(utf8.decode(response.bodyBytes))
-          as Map<String, dynamic>;
+      final bytes = await _receive(
+        _bundlePath,
+        Uri.parse('${_baseUrl()}/campus/offline/bundle'),
+        const Duration(seconds: 60),
+      );
+      bundle = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     } catch (error) {
+      _receivedBytes.remove(_bundlePath);
+      _progressTimer?.cancel();
+      _progressTimer = null;
       _update(_status.copyWith(
+        bytesInFlight: 0,
         // Keep whatever was stored: a half-finished pack must not be
         // reported as ready just because the update attempt failed.
         state: resumeState,
@@ -218,6 +224,11 @@ class OfflinePackService extends ChangeNotifier {
     }
     await _store.writeText(_bundlePath, jsonEncode(bundle));
     _adoptBundle(bundle);
+    _receivedBytes.remove(_bundlePath);
+    _update(_status.copyWith(
+      bytesOnDisk: await _store.bytesOnDisk(),
+      bytesInFlight: 0,
+    ));
 
     final photoPaths = <String, String>{
       for (final url in _photoUrls(bundle)) offlinePhotoPath(url): url,
@@ -246,7 +257,8 @@ class OfflinePackService extends ChangeNotifier {
       totalFiles: total,
       clearUpdateVersion: true,
     ));
-    await _writeMeta(complete: work.isEmpty, generatedAt: bundle['generatedAt']);
+    await _writeMeta(
+        complete: work.isEmpty, generatedAt: bundle['generatedAt']);
 
     var failures = 0;
     var checkpoint = completed;
@@ -285,24 +297,68 @@ class OfflinePackService extends ChangeNotifier {
       message: complete
           ? null
           : _pauseRequested
-              ? 'Paused. $missing of $total files still to download.'
-              : 'Stopped after a connection problem. $missing files still to download.',
+              ? 'Paused. Resume to finish downloading the offline map.'
+              : 'Stopped after a connection problem. Resume to finish downloading the offline map.',
       clearMessage: complete,
     ));
     _pauseRequested = false;
     await _writeMeta(complete: complete, generatedAt: bundle['generatedAt']);
   }
 
+  /// Keeps concurrent transfers separate so chunks are counted exactly once.
+  Future<Uint8List> _receive(String path, Uri url, Duration timeout) async {
+    final response = await _http
+        .send(http.Request('GET', url)
+          ..headers['User-Agent'] = campusDownloadUserAgent)
+        .timeout(timeout);
+    if (response.statusCode != 200) {
+      await response.stream.drain<void>().timeout(timeout);
+      throw const _DownloadFailure(
+          'The offline map is not available right now. Try again later.');
+    }
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in response.stream.timeout(timeout)) {
+      bytes.add(chunk);
+      _receivedBytes[path] = bytes.length;
+      _publishTransferProgress();
+    }
+    if (bytes.isEmpty) throw const _DownloadFailure('Empty download.');
+    return bytes.takeBytes();
+  }
+
+  void _publishTransferProgress({bool force = false, int savedBytes = 0}) {
+    final now = _progressClock.elapsedMilliseconds;
+    if (!force && now - _lastProgressAt < 100) {
+      _progressTimer ??= Timer(
+        Duration(milliseconds: 100 - (now - _lastProgressAt)),
+        () => _publishTransferProgress(force: true),
+      );
+      return;
+    }
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    _lastProgressAt = now;
+    _update(_status.copyWith(
+      bytesOnDisk: _status.bytesOnDisk + savedBytes,
+      bytesInFlight:
+          _receivedBytes.values.fold<int>(0, (sum, bytes) => sum + bytes),
+    ));
+  }
+
   Future<bool> _fetchInto(String path, Uri url) async {
+    var savedBytes = 0;
     try {
-      final response = await _http.get(url, headers: {
-        'User-Agent': campusDownloadUserAgent,
-      }).timeout(const Duration(seconds: 30));
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return false;
-      await _store.write(path, Uint8List.fromList(response.bodyBytes));
+      final bytes = await _receive(path, url, const Duration(seconds: 30));
+      await _store.write(path, bytes);
+      savedBytes = bytes.length;
       return true;
     } catch (_) {
       return false;
+    } finally {
+      // Failed partial responses are discarded; only committed files survive
+      // pause/restart. Moving bytes to disk must not double-count them.
+      _receivedBytes.remove(path);
+      _publishTransferProgress(force: true, savedBytes: savedBytes);
     }
   }
 
@@ -343,8 +399,7 @@ class OfflinePackService extends ChangeNotifier {
     }
   }
 
-  Future<void> _writeMeta(
-      {required bool complete, Object? generatedAt}) async {
+  Future<void> _writeMeta({required bool complete, Object? generatedAt}) async {
     await _store.writeText(
         _metaPath,
         jsonEncode({
@@ -362,6 +417,12 @@ class OfflinePackService extends ChangeNotifier {
   void _update(OfflinePackStatus status) {
     _status = status;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _progressTimer?.cancel();
+    super.dispose();
   }
 
   // ---- Offline reads used by the map while the network is unavailable ----
@@ -383,14 +444,16 @@ class OfflinePackService extends ChangeNotifier {
       'destinationBuildingId': destination.id,
       'origin': {
         'type': origin.type.name,
-        'buildingId':
-            origin.type == NavigationOriginType.campusLocation ? origin.id : null,
+        'buildingId': origin.type == NavigationOriginType.campusLocation
+            ? origin.id
+            : null,
         'latitude': origin.coordinate.latitude,
         'longitude': origin.coordinate.longitude,
       },
     });
     return (result['routes'] as List)
-        .map((row) => WalkingRoute.fromJson(Map<String, dynamic>.from(row as Map)))
+        .map((row) =>
+            WalkingRoute.fromJson(Map<String, dynamic>.from(row as Map)))
         .toList();
   }
 
