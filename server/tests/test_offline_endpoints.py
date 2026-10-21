@@ -18,7 +18,7 @@ class FakeDatabase:
         self.rows = {
             'building': [
                 {'building_id': 1, 'building_name': 'Admin Building',
-                 'building_code': 'ADM', 'classification': 'Administrative',
+                 'building_code': 'ADM', 'type_id': 2,
                  'description': 'Registrar', 'latitude': 16.7220,
                  'longitude': 121.6900, 'polygon_coordinates': []},
             ],
@@ -27,6 +27,8 @@ class FakeDatabase:
                  'location_name': 'Registrar', 'location_code': 'R1',
                  'description': 'Records'},
             ],
+            'building_type': [{'type_id': 2, 'type_name': 'Campus Services'},
+                              {'type_id': 3, 'type_name': 'Parking'}],
             'floor': [],
             'location_type': [{'type_id': 1, 'type_name': 'Office'}],
             'building_photo': [{'photo_id': 4, 'building_id': 1, 'position': 0,
@@ -138,6 +140,17 @@ class OfflineEndpointTests(unittest.TestCase):
         # Image bytes are served by the photo routes, never embedded here.
         self.assertNotIn('base64', response.text)
         self.assertNotIn('data:image', response.text)
+
+    def test_building_category_comes_from_building_type(self):
+        def categories():
+            buildings = self.client.get('/campus/buildings').json()['buildings']
+            return buildings[0]['category'], buildings[0]['isParking']
+
+        self.assertEqual(categories(), ('Campus Services', False))
+        self.database.rows['building'][0]['type_id'] = 3
+        self.assertEqual(categories(), ('Parking', True))
+        self.database.rows['building'][0]['type_id'] = 99
+        self.assertEqual(categories(), ('Building', False))
 
     def test_bundle_matches_the_live_buildings_response(self):
         bundle = self.client.get('/campus/offline/bundle').json()
