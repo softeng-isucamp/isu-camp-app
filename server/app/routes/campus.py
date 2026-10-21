@@ -104,7 +104,7 @@ def campus_map_payload(request):
     """Buildings, rooms, and cover photo URLs exactly as the map consumes them."""
     building_rows = routing_rows(
         "building",
-        "building_id,building_name,building_code,classification,description,latitude,longitude,polygon_coordinates",
+        "building_id,building_name,building_code,type_id,description,latitude,longitude,polygon_coordinates",
         "building_id",
     )
     location_rows = routing_rows(
@@ -119,6 +119,11 @@ def campus_map_payload(request):
     )
     type_rows = routing_rows(
         "location_type",
+        "type_id,type_name",
+        "type_id",
+    )
+    building_type_rows = routing_rows(
+        "building_type",
         "type_id,type_name",
         "type_id",
     )
@@ -137,6 +142,7 @@ def campus_map_payload(request):
 
     floors = {str(row["floor_id"]): row for row in floor_rows}
     types = {str(row["type_id"]): row["type_name"] for row in type_rows}
+    building_types = {str(row["type_id"]): row["type_name"] for row in building_type_rows}
 
     category_by_type = {
         "room": "room",
@@ -188,7 +194,7 @@ def campus_map_payload(request):
     buildings = []
     skipped = 0
     for row in building_rows:
-        building = building_for_map(row)
+        building = building_for_map(row, building_types)
         if building is None:
             skipped += 1
             continue

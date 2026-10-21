@@ -17,13 +17,14 @@ class PhotoDatabase:
     def __init__(self):
         self.rows = {
             'building': [{'building_id': index, 'building_name': f'Building {index}',
-                          'building_code': f'B{index}', 'classification': 'Building',
+                          'building_code': f'B{index}', 'type_id': 1,
                           'description': '', 'latitude': 16.7, 'longitude': 121.6,
                           'polygon_coordinates': []} for index in range(1, 53)],
             'location': [{'location_id': index, 'building_id': (index - 1) % 52 + 1,
                           'floor_id': None, 'type_id': 1, 'location_name': f'Room {index}',
                           'location_code': f'R{index}', 'description': ''}
                          for index in range(1, 84)],
+            'building_type': [{'type_id': 1, 'type_name': 'College'}],
             'floor': [], 'location_type': [{'type_id': 1, 'type_name': 'Room'}],
             'building_photo': [{'photo_id': index, 'building_id': index, 'position': 0,
                                 'is_cover': True, 'content': PNG, 'mime_type': 'image/png'}
@@ -118,7 +119,7 @@ class CampusPhotoTests(unittest.TestCase):
         missing_photo_room = next(room for building in data['buildings']
                                   for room in building['rooms'] if room['id'] == '83')
         self.assertIsNone(missing_photo_room['imageUrl'])
-        self.assertEqual(len(self.database.queries), 6)
+        self.assertEqual(len(self.database.queries), 7)
 
     def test_returned_urls_fetch_only_the_requested_photo_from_the_correct_table(self):
         building = self.client.get('/campus/buildings').json()['buildings'][0]
