@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -21,8 +22,15 @@ void main() {
         await tester.enterText(find.byType(TextField),
             indoor ? 'drawing room of COE' : 'College of Engineering');
         await tester.pump(const Duration(milliseconds: 200));
-        await tester.tap(find.widgetWithText(
-            ListTile, indoor ? 'New Drawing Room' : 'College of Engineering'));
+        final result = find.widgetWithText(
+            ListTile, indoor ? 'New Drawing Room' : 'College of Engineering');
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: tester.getCenter(result));
+        await mouse.down(tester.getCenter(result));
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(result, findsOneWidget);
+        await mouse.up();
+        await mouse.removePointer();
         await tester.pump(const Duration(milliseconds: 400));
         expect(find.byType(IndoorLocationDetailsDialog), findsOneWidget);
         expect(find.byType(BuildingDetailsSheet), findsNothing);

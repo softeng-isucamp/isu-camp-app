@@ -2478,6 +2478,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
+                              // The result panel is outside this TextField. Keep
+                              // it mounted through a desktop mouse click; map
+                              // taps and result selection explicitly unfocus.
+                              onTapOutside: (_) {},
                               textInputAction: TextInputAction.search,
                               onSubmitted: _handleSearchSubmitted,
                               onChanged: (val) => setState(() {}),
