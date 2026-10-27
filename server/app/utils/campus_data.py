@@ -1,9 +1,11 @@
+# This block converts database coordinates, building records, and photos into the Flutter map format.
 """Translate the existing Supabase building schema for the mobile map."""
 
 import math
 import base64
 
 
+# This block converts a binary/hex photo to a base64 data URL, falling back to an existing image URL.
 def photo_for_map(row):
     """Convert PostgREST bytea hex photos to an image the app can display."""
     photo = row.get("content") or row.get("photo")
@@ -23,6 +25,7 @@ def photo_for_map(row):
     return row.get("image_url") or row.get("imageUrl") or row.get("photo_url")
 
 
+# This block prioritizes a valid cover photo, then position and photo ID, for each building or location.
 def cover_photos_for_map(rows, owner_key):
     """Choose a valid cover per building/location, then the earliest position."""
     photos = {}
@@ -41,6 +44,7 @@ def cover_photos_for_map(rows, owner_key):
     return photos
 
 
+# This block accepts only finite numeric latitude/longitude values within valid geographic ranges.
 def coordinate(latitude, longitude):
     try:
         lat, lng = float(latitude), float(longitude)
@@ -51,6 +55,7 @@ def coordinate(latitude, longitude):
     return [lat, lng] if -90 <= lat <= 90 and -180 <= lng <= 180 else None
 
 
+# This block validates polygon and marker coordinates and builds the application's building object.
 def building_for_map(row):
     # The admin table stores polygon points as [latitude, longitude].
     polygon = []
@@ -60,6 +65,7 @@ def building_for_map(row):
             if parsed is not None:
                 polygon.append(parsed)
     position = coordinate(row.get("latitude"), row.get("longitude"))
+    # Fallback marker: averages polygon vertices without counting a repeated closing vertex twice.
     if position is None and polygon:
         vertices = polygon[:-1] if len(polygon) > 1 and polygon[0] == polygon[-1] else polygon
         position = [sum(p[i] for p in vertices) / len(vertices) for i in (0, 1)]
@@ -72,6 +78,7 @@ def building_for_map(row):
         "acronym": row.get("building_code") or "",
         "category": classification,
         "description": row.get("description") or "",
+        "keywords": row.get("keywords") or "",
         "imageUrl": photo_for_map(row),
         "latitude": position[0],
         "longitude": position[1],

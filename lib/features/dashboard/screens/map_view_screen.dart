@@ -17,6 +17,7 @@ import '../models/navigation_history.dart';
 import '../models/navigation_heading.dart';
 import '../models/navigation_progress.dart';
 import '../services/campus_service.dart';
+import '../services/campus_search.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/navigation_sheets.dart';
 import 'user_info_screen.dart';
@@ -753,14 +754,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
     }
   }
 
-  List<CampusBuilding> _getFilteredBuildings() {
+  List<CampusBuilding> _getFilteredBuildings(List<CampusSearchResult> results) {
     return isuCampusBuildings.where((b) {
       final query = _searchController.text.toLowerCase().trim();
-      final matchesQuery = query.isEmpty ||
-          b.name.toLowerCase().contains(query) ||
-          b.acronym.toLowerCase().contains(query) ||
-          b.category.toLowerCase().contains(query) ||
-          b.rooms.any((r) => r.title.toLowerCase().contains(query));
+      final matchesQuery = query.isEmpty || results.any((r) => r.building.id == b.id);
 
       if (!matchesQuery) return false;
 
@@ -785,6 +782,33 @@ class _MapViewScreenState extends State<MapViewScreen> {
       _navigationState = NavigationUiState.buildingDetails;
     });
     _mapController.move(building.coordinate, 17.5);
+  }
+
+  Future<void> _selectSearchResult(CampusSearchResult result) async {
+    _searchController.clear();
+    FocusScope.of(context).unfocus();
+    final room = result.room;
+    setState(() {
+      _selectedBuilding = result.building;
+      _selectedRoom = room;
+      _walkingRoute = null;
+      _historySessionId = null;
+      _navigationState = NavigationUiState.idle;
+    });
+    _mapController.move(room?.coordinate ?? result.building.coordinate, 18);
+    final navigate = await showDialog<bool>(
+      context: context,
+      builder: (_) => IndoorLocationDetailsDialog(
+        building: result.building,
+        room: room,
+      ),
+    );
+    if (!mounted || navigate != true) return;
+    setState(() {
+      _hasSelectedOrigin = false;
+      _selectedOrigin = _defaultOrigin;
+      _navigationState = NavigationUiState.chooseRoute;
+    });
   }
 
   Widget _buildFilterChip(String label, IconData icon) {
@@ -827,7 +851,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
-    final filteredBuildings = _getFilteredBuildings();
+    final rawSearchResults = CampusSearch.search(isuCampusBuildings,
+        _searchController.text, origin: _currentUserLocation);
+    final filteredBuildings = _getFilteredBuildings(rawSearchResults);
+    final searchResults = rawSearchResults.where((r) =>
+        filteredBuildings.any((b) => b.id == r.building.id)).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F5),
@@ -1528,11 +1556,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 color: Colors.white,
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 220),
-                  child: filteredBuildings.isEmpty
+                  child: searchResults.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Text(
-                            'No building found matching "${_searchController.text}"',
+                            'No location found matching "${_searchController.text}"',
                             style: GoogleFonts.montserrat(
                               fontSize: 12,
                               color: Colors.grey.shade600,
@@ -1542,14 +1570,15 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       : ListView.separated(
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           shrinkWrap: true,
-                          itemCount: filteredBuildings.length,
+                          itemCount: searchResults.length,
                           separatorBuilder: (_, __) => const Divider(
                             height: 1,
                             indent: 16,
                             endIndent: 16,
                           ),
                           itemBuilder: (context, idx) {
-                            final bldg = filteredBuildings[idx];
+                            final result = searchResults[idx];
+                            final bldg = result.building;
                             return ListTile(
                               dense: true,
                               leading: Icon(
@@ -1563,7 +1592,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      bldg.name,
+                                      result.title,
                                       style: GoogleFonts.montserrat(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.bold,
@@ -1598,19 +1627,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                   final query = _searchController.text
                                       .toLowerCase()
                                       .trim();
-                                  final matchedRooms = bldg.rooms
-                                      .where((r) =>
-                                          r.title.toLowerCase().contains(query))
-                                      .toList();
+                                  final matchedRooms = result.room == null
+                                      ? <CampusRoom>[] : [result.room!];
 
                                   if (query.isNotEmpty &&
                                       matchedRooms.isNotEmpty) {
-                                    final roomNames = matchedRooms
-                                        .map((r) => r.title)
-                                        .take(2)
-                                        .join(', ');
                                     return Text(
-                                      'Inside: $roomNames (${matchedRooms.first.floor})',
+                                      '${bldg.name} • ${matchedRooms.first.floor}${result.meters == null ? '' : ' • ${result.meters!.round()} m${result.estimatedDistance ? ' approx.' : ''}'}',
                                       style: GoogleFonts.montserrat(
                                         fontSize: 11,
                                         color: const Color(0xFF0F751B),
@@ -1630,11 +1653,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                   );
                                 },
                               ),
-                              onTap: () {
-                                _searchController.clear();
-                                FocusScope.of(context).unfocus();
-                                _selectBuildingAndShowDetails(bldg);
-                              },
+                              onTap: () => _selectSearchResult(result),
                             );
                           },
                         ),
@@ -1644,6 +1663,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
           // 3. Bottom Sheet Overlay State Machine
           if (_locationStatus != null &&
+              _searchController.text.trim().isEmpty &&
               !_isNavigationActive &&
               _navigationState != NavigationUiState.chooseRoute)
             Positioned(

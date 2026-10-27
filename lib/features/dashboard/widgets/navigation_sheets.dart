@@ -75,11 +75,11 @@ class LocationPhoto extends StatelessWidget {
 
 class IndoorLocationDetailsDialog extends StatelessWidget {
   final CampusBuilding building;
-  final CampusRoom room;
+  final CampusRoom? room;
   const IndoorLocationDetailsDialog({
     super.key,
     required this.building,
-    required this.room,
+    this.room,
   });
 
   @override
@@ -118,24 +118,29 @@ class IndoorLocationDetailsDialog extends StatelessWidget {
                             height: 180,
                             width: double.infinity,
                             child: LocationPhoto(
-                              imageUrl: room.imageUrl,
+                              imageUrl: room?.imageUrl ?? (room == null ? building.imageUrl : null),
                             )),
                       ),
                       const SizedBox(height: 16),
-                      Text(room.title,
+                      Text(room?.title ?? building.name,
                           style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFF0F5A28))),
                       const SizedBox(height: 12),
                       Text('Building: ${building.name}'),
-                      const SizedBox(height: 6),
-                      Text('Floor: ${room.floor}'),
-                      const SizedBox(height: 6),
-                      Text('Room name: ${room.title}'),
-                      if (room.description?.isNotEmpty ?? false) ...[
+                      if (room != null) ...[
+                        const SizedBox(height: 6),
+                        Text('Floor: ${room!.floor}'),
+                        const SizedBox(height: 6),
+                        Text('Room name: ${room!.title}'),
+                      ] else ...[
+                        const SizedBox(height: 6),
+                        Text('Category: ${building.category}'),
+                      ],
+                      if ((room == null ? building.description : room!.description ?? '').isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        Text(room.description!),
+                        Text(room == null ? building.description : room!.description!),
                       ],
                       const SizedBox(height: 20),
                       SizedBox(
