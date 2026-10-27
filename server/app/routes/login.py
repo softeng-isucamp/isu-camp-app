@@ -1,3 +1,4 @@
+# Login and password recovery endpoints, including failed-login lockout.
 import random
 import re
 import threading
@@ -22,14 +23,18 @@ password_hash = PasswordHash.recommended()
 
 MAX_LOGIN_ATTEMPTS = 6
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=5)
+# Attempt counters are stored in memory, separately per server process, and reset on restart.
 _login_attempts = {}
+# This block protects counter updates against concurrent requests within this process.
 _login_attempts_lock = threading.Lock()
 
 
+# This block normalizes case and surrounding whitespace for a consistent lockout key.
 def _login_key(identifier: str) -> str:
     return identifier.strip().casefold()
 
 
+# This block reads the remaining lockout time and removes the state when the lockout expires.
 def _remaining_lockout(identifier: str) -> int:
     """Return remaining lockout seconds for an identifier, or 0 if unlocked."""
     key = _login_key(identifier)
@@ -45,6 +50,7 @@ def _remaining_lockout(identifier: str) -> int:
         return remaining + 1
 
 
+# This block increments failed attempts and starts a five-minute lockout on the sixth failure.
 def _record_failed_login(identifier: str) -> tuple[int, int]:
     """Record a failed attempt and return (attempt count, lockout seconds)."""
     key = _login_key(identifier)
@@ -58,11 +64,13 @@ def _record_failed_login(identifier: str) -> tuple[int, int]:
         return state["attempts"], 0
 
 
+# This block resets failed attempts for the identifier after a successful login.
 def _clear_login_attempts(identifier: str) -> None:
     with _login_attempts_lock:
         _login_attempts.pop(_login_key(identifier), None)
 
 
+# This block raises 401 or 429 with attempt counts and, during lockout, a retry time in the headers.
 def _invalid_login(identifier: str):
     attempts, lockout_seconds = _record_failed_login(identifier)
     headers = {
@@ -87,12 +95,14 @@ def _invalid_login(identifier: str):
 # LOGIN
 # ==========================================
 
+# This block checks whether a username or email and a password have been provided.
 class LoginRequest(BaseModel):
     identifier: str
     password: str
     captcha_token: str = ''
 
 
+# This block finds the account by email or username and verifies the password against its stored hash.
 @router.post("/login")
 def login(data: LoginRequest):
     verify_captcha(data.captcha_token)
@@ -215,18 +225,21 @@ def login(data: LoginRequest):
 
 
 # ============================================================
-# FORGOT PASSWORD MODELS
+# FORGOT PASSWORD INPUT CHECKS
 # ============================================================
 
+# This block checks whether a username or email has been provided for account recovery.
 class ForgotPasswordRequest(BaseModel):
     identifier: str
 
 
+# This block checks whether an account identifier and a numeric recovery code have been provided.
 class VerifyForgotPasswordOTP(BaseModel):
     identifier: str
     otp: int
 
 
+# This block checks whether an account identifier, new password, and confirmation have been provided.
 class ResetPasswordRequest(BaseModel):
     identifier: str
     password: str
@@ -237,6 +250,7 @@ class ResetPasswordRequest(BaseModel):
 # HELPER: FIND USER USING USERNAME OR EMAIL
 # ============================================================
 
+# This block finds linked user/userInfo records and returns the email used for account recovery.
 def get_user_by_identifier(identifier: str):
 
     identifier = identifier.strip()
@@ -332,6 +346,7 @@ def get_user_by_identifier(identifier: str):
 # FORGOT PASSWORD - REQUEST OTP
 # ============================================================
 
+# This block creates a recovery OTP and attempts to remove the pending record if saving or sending fails.
 @router.post("/forgot-password/request-otp")
 def forgot_password_request_otp(
     data: ForgotPasswordRequest
@@ -411,6 +426,7 @@ def forgot_password_request_otp(
 # FORGOT PASSWORD - VERIFY OTP
 # ============================================================
 
+# This block validates the recovery OTP and marks the pending record as verified.
 @router.post("/forgot-password/verify-otp")
 def forgot_password_verify_otp(
     data: VerifyForgotPasswordOTP
@@ -551,6 +567,7 @@ def forgot_password_verify_otp(
 # FORGOT PASSWORD - RESET PASSWORD
 # ============================================================
 
+# This block requires a verified OTP and rechecks its expiration when present before replacing the password hash.
 @router.post("/forgot-password/reset-password")
 def forgot_password_reset_password(
     data: ResetPasswordRequest

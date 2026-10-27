@@ -1,3 +1,4 @@
+# History API: reads, saves, and deletes the authenticated user's navigation history.
 """History using the existing UserHistory foreign keys; no schema changes."""
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +9,7 @@ from app.utils.session import current_user_id
 
 router = APIRouter(prefix="/history", tags=["History"])
 logger = logging.getLogger(__name__)
+# This block includes related building/location names through the existing foreign keys.
 HISTORY_SELECT = (
     "id,Building_id,Location_id,created_at,"
     "building:building!Building_id(building_name,building_code),"
@@ -15,12 +17,15 @@ HISTORY_SELECT = (
 )
 
 
+# This block checks whether the building ID and optional room ID are positive numbers.
 class HistoryRequest(BaseModel):
+    # This block rejects unexpected fields; the user ID comes from the session token rather than the request body.
     model_config = ConfigDict(extra="forbid")
     buildingId: int = Field(gt=0)
     locationId: int | None = Field(default=None, gt=0)
 
 
+# This block converts a database history row into client-facing keys and string IDs.
 def history_entry(row):
     building = row.get("building") or {}
     location = row.get("location") or {}
@@ -33,6 +38,7 @@ def history_entry(row):
             "createdAt": row["created_at"]}
 
 
+# This block returns up to 100 entries belonging to the logged-in user, newest first.
 @router.get("")
 def list_history(offset: int = Query(0, ge=0), user_id: int = Depends(current_user_id)):
     try:
@@ -45,6 +51,7 @@ def list_history(offset: int = Query(0, ge=0), user_id: int = Depends(current_us
         raise HTTPException(503, "Could not load history. Please try again.") from None
 
 
+# This block validates the destination and room/building relationship before saving history.
 @router.post("", status_code=201)
 def create_history(data: HistoryRequest, user_id: int = Depends(current_user_id)):
     try:
@@ -72,6 +79,7 @@ def create_history(data: HistoryRequest, user_id: int = Depends(current_user_id)
         raise HTTPException(503, "Could not save history. Please try again.") from None
 
 
+# This block deletes all history belonging to the user identified by the session.
 @router.delete("")
 def clear_history(user_id: int = Depends(current_user_id)):
     try:
@@ -82,6 +90,7 @@ def clear_history(user_id: int = Depends(current_user_id)):
         raise HTTPException(503, "Could not clear history. Please try again.") from None
 
 
+# This block deletes an entry only when both its ID and authenticated owner ID match.
 @router.delete("/{entry_id}")
 def delete_history(entry_id: int, user_id: int = Depends(current_user_id)):
     try:

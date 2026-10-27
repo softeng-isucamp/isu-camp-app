@@ -96,6 +96,9 @@ class CampusPhotoTests(unittest.TestCase):
         self.client = TestClient(app, base_url='https://api.example.test')
 
     def test_list_reads_metadata_only_and_stays_small_with_large_stored_photos(self):
+        self.database.rows['building'][0]['keywords'] = 'college alias'
+        self.database.rows['location'][0].update(
+            keywords='drawing, classroom', latitude=16.7, longitude=121.6)
         # Shared by rows in this fixture; never selected or serialized by the list.
         large_photo = r'\x' + 'aa' * 2_700_000
         for table in ('building_photo', 'location_photo'):
@@ -105,6 +108,9 @@ class CampusPhotoTests(unittest.TestCase):
         response = self.client.get('/campus/buildings')
         self.assertEqual(response.status_code, 200)
         data = response.json()
+        self.assertEqual(data['buildings'][0]['keywords'], 'college alias')
+        self.assertEqual(data['buildings'][0]['rooms'][0]['keywords'], 'drawing, classroom')
+        self.assertEqual(data['buildings'][0]['rooms'][0]['latitude'], 16.7)
         self.assertEqual(len(data['buildings']), 52)
         self.assertEqual(sum(len(row['rooms']) for row in data['buildings']), 83)
         self.assertLess(len(response.content), 1_000_000)

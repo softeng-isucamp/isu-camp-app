@@ -119,6 +119,9 @@ class NavigationOrigin {
 }
 
 class CampusRoom {
+  final String keywords;
+  final String code;
+  final LatLng? coordinate;
   final String id;
   final String title;
   final RoomCategory category;
@@ -128,6 +131,9 @@ class CampusRoom {
   final String? description;
 
   const CampusRoom({
+    this.keywords = '',
+    this.code = '',
+    this.coordinate,
     required this.id,
     required this.title,
     required this.category,
@@ -138,6 +144,10 @@ class CampusRoom {
   });
 
   Map<String, dynamic> toJson() => {
+        'keywords': keywords,
+        'code': code,
+        'latitude': coordinate?.latitude,
+        'longitude': coordinate?.longitude,
         'id': id,
         'title': title,
         'category': category.name,
@@ -147,6 +157,11 @@ class CampusRoom {
       };
 
   factory CampusRoom.fromJson(Map<String, dynamic> json) => CampusRoom(
+        keywords: (json['keywords'] ?? '').toString(),
+        code: (json['code'] ?? '').toString(),
+        coordinate: json['latitude'] is num && json['longitude'] is num
+            ? LatLng((json['latitude'] as num).toDouble(), (json['longitude'] as num).toDouble())
+            : null,
         id: json['id'] ?? '',
         title: json['title'] ?? '',
         category: RoomCategory.values.firstWhere(
@@ -211,6 +226,7 @@ class CampusRoute {
 }
 
 class CampusBuilding {
+  final String keywords;
   final String id;
   final String name;
   final String acronym;
@@ -225,6 +241,7 @@ class CampusBuilding {
   final List<LatLng> polygonCoordinates;
 
   const CampusBuilding({
+    this.keywords = '',
     required this.id,
     required this.name,
     required this.acronym,
@@ -240,6 +257,7 @@ class CampusBuilding {
   });
 
   Map<String, dynamic> toJson() => {
+        'keywords': keywords,
         'id': id,
         'name': name,
         'acronym': acronym,
@@ -258,6 +276,7 @@ class CampusBuilding {
       };
 
   factory CampusBuilding.fromJson(Map<String, dynamic> json) => CampusBuilding(
+        keywords: (json['keywords'] ?? '').toString(),
         id: json['id'] ?? '',
         name: json['name'] ?? '',
         acronym: json['acronym'] ?? '',

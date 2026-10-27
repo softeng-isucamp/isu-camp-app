@@ -1,3 +1,4 @@
+# Routing engine: builds a directed graph and finds shortest and shaded routes.
 """Campus transport graph routing. All weights are nonnegative; no database writes."""
 import heapq
 import math
@@ -5,6 +6,7 @@ import re
 
 from app.utils.campus_data import coordinate
 
+# Less shaded paths receive higher penalties, affecting route cost rather than actual distance.
 SHADE_PENALTIES = {"fully shaded": 0, "mostly shaded": .25,
                    "partial shade": .5, "unshaded": 1, "unknown": 1}
 
@@ -17,6 +19,7 @@ MODE_ALIASES = {"walking": "walking", "walk": "walking", "pedestrian": "walking"
                 "cycling": "bicycle", "vehicle": "vehicle"}
 
 
+# This block checks whether a pathway permits the selected transport mode.
 def pathway_allows_mode(value, mode):
     label = MODE_ALIASES.get(str(value or "").strip().lower())
     # The current admin dataset uses Vehicle as an umbrella for wheeled modes.
@@ -28,6 +31,7 @@ class RoutingError(ValueError):
     pass
 
 
+# This block uses the Haversine formula to estimate the distance between two coordinates in meters.
 def meters(a, b):
     lat1, lat2 = math.radians(a[0]), math.radians(b[0])
     dlat, dlng = lat2 - lat1, math.radians(b[1] - a[1])
@@ -35,6 +39,7 @@ def meters(a, b):
     return 6371000 * 2 * math.asin(min(1, math.sqrt(h)))
 
 
+# This block finds the closest point on the path segments and the remaining geometry toward the endpoint.
 def project_on_path(position, geometry):
     """Return closest point and the remaining directed path from that point."""
     scale = math.cos(math.radians(position[0]))
@@ -51,22 +56,26 @@ def project_on_path(position, geometry):
     return best
 
 
+# This block builds a graph from active permitted pathways and computes both route preferences.
 def campus_routes(nodes, pathways, modes, points, request):
     mode = request.get("mode", "walking")
     if mode not in MODE_SPEEDS:
         raise RoutingError("Unsupported transport mode.")
     speed = MODE_SPEEDS[mode]
     label = MODE_LABELS[mode]
+    # This block keeps only active nodes with valid coordinates.
     nodes = {str(n["node_id"]): dict(n, position=coordinate(n.get("latitude"), n.get("longitude")))
              for n in nodes if str(n.get("status", "")).lower() == "active"}
     nodes = {k: n for k, n in nodes.items() if n["position"] is not None}
     allowed = {str(m["pathway_id"]) for m in modes if pathway_allows_mode(m.get("mode"), mode)}
+    # This block groups active geometry points by pathway for later ordering by sequence number.
     grouped = {}
     for p in points:
         if str(p.get("status", "")).lower() == "active":
             pos = coordinate(p.get("latitude"), p.get("longitude"))
             if pos is not None:
                 grouped.setdefault(str(p["pathway_id"]), []).append((int(p["sequence_no"]), pos))
+    # Adjacency list: each node stores its permitted outgoing edges.
     graph = {k: [] for k in nodes}
     for p in pathways:
         pid = str(p["pathway_id"])
@@ -79,6 +88,7 @@ def campus_routes(nodes, pathways, modes, points, request):
             continue
         start, end = nodes[a]["position"], nodes[b]["position"]
         shape = [pos for _, pos in sorted(grouped.get(pid, []), key=lambda item: item[0])]
+        # This block reverses intermediate points when that better matches the source-to-destination order.
         if shape and meters(start, shape[-1]) + meters(end, shape[0]) < meters(start, shape[0]) + meters(end, shape[-1]):
             shape.reverse()
         geometry = []
@@ -93,9 +103,11 @@ def campus_routes(nodes, pathways, modes, points, request):
                 "penalty": SHADE_PENALTIES.get(str(p.get("shade", "unknown")).strip().lower(), 1),
                 "name": p.get("name") or "Campus pathway", "points": geometry}
         graph[a].append((b, edge))
+        # This block adds a reverse edge only when the database marks the pathway as two-way.
         if direction == "twoway":
             graph[b].append((a, dict(edge, points=list(reversed(geometry)))))
 
+    # This block uses active entrance nodes of the selected building as destinations.
     targets = {k for k, n in nodes.items() if n.get("building_id") is not None
                and str(n["building_id"]) == str(request["destinationBuildingId"])
                and str(n.get("node_type", "")).lower() == "entrance"}
@@ -121,6 +133,7 @@ def campus_routes(nodes, pathways, modes, points, request):
         if not candidates:
             raise RoutingError(f"No {label.lower()} starting point is available on permitted pathways.")
         _, _, nearest_edge, nearest = min(candidates, key=lambda item: item[3][0])
+        # This block rejects a coordinate origin more than 200 meters from the nearest permitted pathway.
         if nearest[0] > 200:
             raise RoutingError(f"No permitted {label.lower()} pathway within 200 m. Choose a campus building or the main gate.")
         # Snap to a pathway interior without routing back to a distant node.
@@ -137,6 +150,7 @@ def campus_routes(nodes, pathways, modes, points, request):
                 distanceMeters=length, estimatedMinutes=length / speed)))
         starts = {start_id}
 
+    # Dijkstra search: uses distance for the shortest route and a shade penalty for the shaded preference.
     def solve(shaded):
         costs = {k: 0.0 for k in starts}
         previous = {}
@@ -145,6 +159,7 @@ def campus_routes(nodes, pathways, modes, points, request):
         found = None
         while queue:
             cost, node = heapq.heappop(queue)
+            # This block skips an outdated queue entry when a lower cost has already been found for that node.
             if cost != costs[node]:
                 continue
             if node in targets:
@@ -158,6 +173,7 @@ def campus_routes(nodes, pathways, modes, points, request):
                     heapq.heappush(queue, (updated, dest))
         if found is None:
             raise RoutingError(f"No connected {label.lower()} route to this building is available on permitted pathways.")
+        # This block follows predecessor links backward, then reverses the edges into travel order.
         edges, cursor = [], found
         while cursor in previous:
             cursor, edge = previous[cursor]
@@ -174,9 +190,11 @@ def campus_routes(nodes, pathways, modes, points, request):
                 "startNodeName": nodes[cursor].get("name") or nodes[cursor].get("node_name") or "Route starting point",
                 "steps": [{"instruction": "Follow " + e["name"], "distanceMeters": e["distanceMeters"],
                            "coordinate": e["points"][0]} for e in edges]}
+    # This block returns both preferences; they may use the same path.
     return {"routes": [solve(False), solve(True)]}
 
 
+# Compatibility wrapper for callers that still use the previous function name.
 def walking_routes(nodes, pathways, modes, points, request):
     """Compatibility entry point for existing callers."""
     return campus_routes(nodes, pathways, modes, points, request)

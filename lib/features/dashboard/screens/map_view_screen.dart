@@ -22,6 +22,7 @@ import '../models/navigation_heading.dart';
 import '../models/navigation_progress.dart';
 import '../models/route_trim.dart';
 import '../services/campus_service.dart';
+import '../services/campus_search.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/location_puck.dart';
 import '../widgets/navigation_sheets.dart';
@@ -1255,42 +1256,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
     }
   }
 
-  bool _buildingMatchesSearchText(CampusBuilding b, String rawQuery) {
-    final query = rawQuery.toLowerCase().trim();
-    if (query.isEmpty) return true;
-
-    final mappedCategory = _categoryFromSearchQuery(query);
-    if (mappedCategory != null) {
-      return _matchesCategoryFilter(b, mappedCategory);
-    }
-
-    final singular = query.endsWith('ies') && query.length > 4
-        ? '${query.substring(0, query.length - 3)}y'
-        : (query.endsWith('s') && query.length > 3
-            ? query.substring(0, query.length - 1)
-            : query);
-
-    bool matchesToken(String q) {
-      if (b.name.toLowerCase().contains(q) ||
-          b.acronym.toLowerCase().contains(q) ||
-          b.category.toLowerCase().contains(q) ||
-          b.description.toLowerCase().contains(q)) {
-        return true;
-      }
-      return b.rooms.any((r) =>
-          r.title.toLowerCase().contains(q) ||
-          r.category.name.toLowerCase().contains(q) ||
-          (r.description ?? '').toLowerCase().contains(q));
-    }
-
-    return matchesToken(query) ||
-        (singular != query && matchesToken(singular));
-  }
-
   List<CampusBuilding> _getFilteredBuildings() {
+    final query = _searchController.text.trim();
+    final ids = query.isEmpty ? <String>{} : CampusSearch.search(
+        isuCampusBuildings, query, origin: _currentUserLocation)
+        .map((r) => r.building.id).toSet();
     return isuCampusBuildings.where((b) {
-      final query = _searchController.text.toLowerCase().trim();
-      if (!_buildingMatchesSearchText(b, query)) return false;
+      if (query.isNotEmpty && !ids.contains(b.id)) return false;
       if (!_matchesCategoryFilter(b, _selectedCategoryFilter)) return false;
       return true;
     }).toList();
@@ -1363,124 +1335,47 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   List<SmartSearchResult> _getSmartSearchResults() {
-    final rawQuery = _searchController.text.trim().toLowerCase();
-    if (rawQuery.isEmpty) return const [];
+    return CampusSearch.search(isuCampusBuildings, _searchController.text,
+        origin: _currentUserLocation)
+        .where((r) => _matchesCategoryFilter(r.building, _selectedCategoryFilter))
+        .map((r) => SmartSearchResult(building: r.building,
+            matchedRooms: r.room == null ? [] : [r.room!], isDirectMatch: true))
+        .toList();
+  }
 
-    final results = <SmartSearchResult>[];
-    final mappedCategory = _categoryFromSearchQuery(rawQuery);
-    final isRestroomQuery = mappedCategory == 'Restroom' ||
-        rawQuery == 'cr' ||
-        rawQuery.contains('restroom') ||
-        rawQuery.contains('comfort room') ||
-        rawQuery.contains('toilet') ||
-        rawQuery.contains('washroom');
-    final isParkingQuery = mappedCategory == 'Parking' ||
-        rawQuery.contains('parking') ||
-        rawQuery == 'park';
-    final isFoodQuery = mappedCategory == 'Food' ||
-        rawQuery == 'canteen' ||
-        rawQuery == 'cafeteria' ||
-        rawQuery == 'food' ||
-        rawQuery == 'snack';
-
-    for (final building in isuCampusBuildings) {
-      final nameLower = building.name.toLowerCase();
-      final acronymLower = building.acronym.toLowerCase();
-      final categoryLower = building.category.toLowerCase();
-      final descLower = building.description.toLowerCase();
-
-      final nameMatches = nameLower.contains(rawQuery) ||
-          (acronymLower.isNotEmpty && acronymLower.contains(rawQuery));
-      final categoryMatches = categoryLower.contains(rawQuery);
-      final descMatches = descLower.contains(rawQuery);
-      final synonymMatches =
-          (mappedCategory != null &&
-              _matchesCategoryFilter(building, mappedCategory)) ||
-          (isRestroomQuery && _matchesCategoryFilter(building, 'Restroom')) ||
-          (isParkingQuery && _matchesCategoryFilter(building, 'Parking')) ||
-          (isFoodQuery && _matchesCategoryFilter(building, 'Food')) ||
-          _buildingMatchesSearchText(building, rawQuery);
-
-      // Check interior rooms matching
-      final matchingRooms = <CampusRoom>[];
-      for (final room in building.rooms) {
-        final titleLower = room.title.toLowerCase();
-        final roomCatLower = room.category.name.toLowerCase();
-        final roomDescLower = (room.description ?? '').toLowerCase();
-
-        final roomMatches = titleLower.contains(rawQuery) ||
-            roomCatLower.contains(rawQuery) ||
-            roomDescLower.contains(rawQuery) ||
-            (isRestroomQuery &&
-                (roomCatLower.contains('restroom') ||
-                    titleLower.contains('cr') ||
-                    titleLower.contains('restroom')));
-
-        if (roomMatches) {
-          matchingRooms.add(room);
-        }
-      }
-
-      if (nameMatches ||
-          categoryMatches ||
-          descMatches ||
-          synonymMatches ||
-          matchingRooms.isNotEmpty) {
-        results.add(SmartSearchResult(
-          building: building,
-          matchedRooms: matchingRooms,
-          isDirectMatch: nameMatches || synonymMatches,
-        ));
-      }
-    }
-
-    // Sort direct name/acronym/synonym matches first
-    results.sort((a, b) {
-      if (a.isDirectMatch && !b.isDirectMatch) return -1;
-      if (!a.isDirectMatch && b.isDirectMatch) return 1;
-      return 0;
+  Future<void> _openSearchLocation(CampusBuilding building, {CampusRoom? room}) async {
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+    setState(() {
+      _selectedBuilding = building;
+      _selectedRoom = room;
+      _walkingRoute = null;
+      _historySessionId = null;
+      _navigationState = NavigationUiState.idle;
     });
-
-    return results;
+    _mapController.move(room?.coordinate ?? building.coordinate, 18);
+    final navigate = await showDialog<bool>(context: context,
+        builder: (_) => IndoorLocationDetailsDialog(building: building, room: room));
+    if (!mounted || navigate != true) return;
+    _selectBuildingAndShowDetails(building, room: room);
+    setState(() {
+      _hasSelectedOrigin = false;
+      _applyDefaultOrigin();
+      _navigationState = NavigationUiState.chooseRoute;
+    });
+    _locateForDefaultOrigin();
   }
 
   void _handleSearchSubmitted(String query) {
-    final cleanQuery = query.trim();
-    if (cleanQuery.isEmpty) return;
+    if (query.trim().isEmpty) return;
     _searchFocusNode.unfocus();
-
-    final mappedCategory = _categoryFromSearchQuery(cleanQuery);
     final results = _getSmartSearchResults();
-
-    if (mappedCategory != null && results.isNotEmpty) {
-      setState(() {
-        _selectedCategoryFilter = mappedCategory;
-        if (results.length > 1) {
-          _navigationState = NavigationUiState.idle;
-        }
-      });
-      if (results.length == 1) {
-        final best = results.first;
-        _selectBuildingAndShowDetails(best.building,
-            room: best.matchedRooms.firstOrNull);
-        _mapController.move(best.building.coordinate, 18.2);
-      }
-      return;
-    }
-
-    if (results.isNotEmpty) {
-      final best = results.first;
-      _selectBuildingAndShowDetails(best.building,
-          room: best.matchedRooms.firstOrNull);
-      _mapController.move(best.building.coordinate, 18.2);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No location found matching "$cleanQuery"'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: const Color(0xFF0B351E),
-        ),
-      );
+    if (results.length == 1) {
+      final result = results.first;
+      _openSearchLocation(result.building, room: result.matchedRooms.firstOrNull);
+    } else if (results.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('No location found matching "$query"')));
     }
   }
 
@@ -1550,7 +1445,6 @@ class _MapViewScreenState extends State<MapViewScreen> {
             maxHeight: MediaQuery.of(context).size.height * 0.44,
           ),
           decoration: BoxDecoration(
-            color: Colors.white,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.grey.shade200),
           ),
@@ -1714,7 +1608,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   onTap: () {
                     _searchController.clear();
                     _searchFocusNode.unfocus();
-                    _selectBuildingAndShowDetails(bldg);
+                    _openSearchLocation(bldg);
                   },
                 );
               },
@@ -1809,7 +1703,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            bldg.name,
+                            result.matchedRooms.firstOrNull?.title ?? bldg.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.montserrat(
@@ -1852,7 +1746,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     onTap: () {
                       _searchController.clear();
                       _searchFocusNode.unfocus();
-                      _selectBuildingAndShowDetails(bldg);
+                      _openSearchLocation(bldg, room: result.matchedRooms.firstOrNull);
                     },
                   ),
                   if (result.matchedRooms.isNotEmpty)
@@ -1866,7 +1760,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             onTap: () {
                               _searchController.clear();
                               _searchFocusNode.unfocus();
-                              _selectBuildingAndShowDetails(bldg, room: room);
+                              _openSearchLocation(bldg, room: room);
                             },
                             borderRadius: BorderRadius.circular(6),
                             child: Container(
@@ -2584,6 +2478,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
+                              // The result panel is outside this TextField. Keep
+                              // it mounted through a desktop mouse click; map
+                              // taps and result selection explicitly unfocus.
+                              onTapOutside: (_) {},
                               textInputAction: TextInputAction.search,
                               onSubmitted: _handleSearchSubmitted,
                               onChanged: (val) => setState(() {}),
@@ -2655,6 +2553,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
           // 3. Bottom Sheet Overlay State Machine
           if (_locationStatus != null &&
+              _searchController.text.trim().isEmpty &&
               !_isNavigationActive &&
               _navigationState != NavigationUiState.chooseRoute)
             Positioned(
