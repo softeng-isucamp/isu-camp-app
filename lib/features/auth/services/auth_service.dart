@@ -23,20 +23,31 @@ class OtpException implements Exception {
   final String message;
   final int? attemptsRemaining;
   final int? retryAfterSeconds;
+  final int? statusCode;
 
   const OtpException(
     this.message, {
     this.attemptsRemaining,
     this.retryAfterSeconds,
+    this.statusCode,
   });
 
   bool get isLocked => attemptsRemaining == 0 || retryAfterSeconds != null;
+  bool get isIncorrectCode =>
+      (statusCode == null || statusCode! < 500) &&
+      (isLocked ||
+          message.toLowerCase().contains('invalid otp') ||
+          message.toLowerCase().contains('incorrect'));
 
   @override
   String toString() => message;
 }
 
 class AuthService {
+  static String verificationErrorMessage(Object error) => error is OtpException
+      ? error.message
+      : 'Could not complete verification. Check your connection and try again.';
+
   static const String _configuredBaseUrl =
       String.fromEnvironment('API_BASE_URL');
 
@@ -79,6 +90,7 @@ class AuthService {
     final retryAfter = response.headers['retry-after'];
     return OtpException(
       message,
+      statusCode: response.statusCode,
       attemptsRemaining: structuredRemaining is int
           ? structuredRemaining
           : remainingMatch == null
@@ -95,17 +107,21 @@ class AuthService {
   static Future<Map<String, dynamic>> login({
     required String identifier,
     required String password,
+    String? captchaToken,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/login'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'identifier': identifier,
-        'password': password,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/login'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'identifier': identifier,
+            'password': password,
+            if (captchaToken != null) 'captcha_token': captchaToken,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -134,16 +150,18 @@ class AuthService {
     required String username,
     required String email,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup/request-otp'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'username': username,
-        'email': email,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/signup/request-otp'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'username': username,
+            'email': email,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -166,16 +184,18 @@ class AuthService {
     required String email,
     required int otp,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup/verify-otp'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'otp': otp,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/signup/verify-otp'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email': email,
+            'otp': otp,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -196,18 +216,20 @@ class AuthService {
     required String confirmPassword,
     required String userType,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup/set-password'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-        'confirm_password': confirmPassword,
-        'user_type': userType,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/signup/set-password'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+            'confirm_password': confirmPassword,
+            'user_type': userType,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -227,15 +249,17 @@ class AuthService {
   static Future<Map<String, dynamic>> requestForgotPasswordOtp({
     required String identifier,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/forgot-password/request-otp'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'identifier': identifier,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/forgot-password/request-otp'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'identifier': identifier,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -258,16 +282,18 @@ class AuthService {
     required String identifier,
     required int otp,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/forgot-password/verify-otp'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'identifier': identifier,
-        'otp': otp,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/forgot-password/verify-otp'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'identifier': identifier,
+            'otp': otp,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 
@@ -287,17 +313,19 @@ class AuthService {
     required String password,
     required String confirmPassword,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/forgot-password/reset-password'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'identifier': identifier,
-        'password': password,
-        'confirm_password': confirmPassword,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/auth/forgot-password/reset-password'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'identifier': identifier,
+            'password': password,
+            'confirm_password': confirmPassword,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
     final data = jsonDecode(response.body);
 

@@ -1,6 +1,8 @@
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
+import '../../offline/services/offline_pack_service.dart';
 import '../models/campus_models.dart';
 import '../models/navigation_progress.dart';
 import '../services/campus_service.dart';
@@ -59,6 +61,15 @@ class LocationPhoto extends StatelessWidget {
     }
     final uri = Uri.tryParse(source);
     if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      // A downloaded photo shows instantly and works with no connection.
+      final downloaded = OfflinePackService.instance.photoImage(source);
+      if (downloaded != null) {
+        return Image(
+          image: downloaded,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => placeholder(),
+        );
+      }
       return Image.network(
         source,
         fit: BoxFit.cover,
@@ -293,7 +304,7 @@ class RouteMetricsHelper {
 // =========================================================================
 // 1. BUILDING DETAILS MODAL SHEET (Design Mockup Image 5)
 // =========================================================================
-class BuildingDetailsSheet extends StatelessWidget {
+class BuildingDetailsSheet extends StatefulWidget {
   final CampusBuilding building;
   final VoidCallback onDirectionsTap;
   final ValueChanged<CampusRoom> onRoomDirectionsTap;
@@ -308,74 +319,194 @@ class BuildingDetailsSheet extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.70,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag Handle & Top Header Row
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+  State<BuildingDetailsSheet> createState() => _BuildingDetailsSheetState();
+}
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'BUILDING DETAILS',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade600,
-                    letterSpacing: 0.5,
+class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
+  static const double _minSheetSize = 0.16;
+  static const double _initialSheetSize = 0.58;
+  static const double _maxSheetSize = 0.88;
+
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+
+  CampusBuilding get building => widget.building;
+  VoidCallback get onDirectionsTap => widget.onDirectionsTap;
+  ValueChanged<CampusRoom> get onRoomDirectionsTap => widget.onRoomDirectionsTap;
+  VoidCallback? get onClose => widget.onClose;
+
+  @override
+  void didUpdateWidget(covariant BuildingDetailsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.building.id != widget.building.id &&
+        _sheetController.isAttached) {
+      _sheetController.animateTo(
+        _initialSheetSize,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _sheetController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSheetPosition() {
+    if (!_sheetController.isAttached) return;
+    final currentSize = _sheetController.size;
+    final targetSize =
+        currentSize <= (_minSheetSize + 0.08) ? _initialSheetSize : _minSheetSize;
+    _sheetController.animateTo(
+      targetSize,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleHeaderVerticalDragUpdate(
+    DragUpdateDetails details,
+    double maxHeight,
+  ) {
+    if (!_sheetController.isAttached || maxHeight <= 0) return;
+    final delta = (details.primaryDelta ?? 0) / maxHeight;
+    final nextSize =
+        (_sheetController.size - delta).clamp(_minSheetSize, _maxSheetSize);
+    _sheetController.jumpTo(nextSize);
+  }
+
+  void _handleHeaderVerticalDragEnd(DragEndDetails details) {
+    if (!_sheetController.isAttached) return;
+    final velocity = details.primaryVelocity ?? 0;
+    final current = _sheetController.size;
+    const snaps = [_minSheetSize, _initialSheetSize, _maxSheetSize];
+
+    double target;
+    if (velocity < -350) {
+      target = snaps.firstWhere((s) => s > current, orElse: () => _maxSheetSize);
+    } else if (velocity > 350) {
+      target = snaps.lastWhere((s) => s < current, orElse: () => _minSheetSize);
+    } else {
+      target = snaps.reduce(
+        (a, b) => (a - current).abs() < (b - current).abs() ? a : b,
+      );
+    }
+
+    _sheetController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: screenHeight),
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+            PointerDeviceKind.stylus,
+          },
+        ),
+        child: DraggableScrollableSheet(
+          controller: _sheetController,
+          expand: false,
+          initialChildSize: _initialSheetSize,
+          minChildSize: _minSheetSize,
+          maxChildSize: _maxSheetSize,
+          snap: true,
+          snapSizes: const [_minSheetSize, _initialSheetSize, _maxSheetSize],
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 20,
+                    offset: Offset(0, -4),
                   ),
-                ),
-                if (onClose != null)
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Sticky Draggable Header (Drag Handle & Top Header Row)
                   GestureDetector(
-                    onTap: onClose,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        size: 18,
-                        color: Colors.black54,
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _toggleSheetPosition,
+                    onVerticalDragUpdate: (details) =>
+                        _handleHeaderVerticalDragUpdate(details, screenHeight),
+                    onVerticalDragEnd: _handleHeaderVerticalDragEnd,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 44,
+                              height: 5,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade400,
+                                borderRadius: BorderRadius.circular(2.5),
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'BUILDING DETAILS',
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              if (onClose != null)
+                                GestureDetector(
+                                  onTap: onClose,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 18,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
-              ],
-            ),
 
-            const SizedBox(height: 10),
+                  // Scrollable Body Linked to DraggableScrollableSheet
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
 
             // Building Image with rounded corners
             ClipRRect(
@@ -616,7 +747,14 @@ class BuildingDetailsSheet extends StatelessWidget {
                   ),
                 ),
               ),
-          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1053,11 +1191,13 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
   @override
   void didUpdateWidget(covariant ChooseRouteSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.hasSelectedOrigin != oldWidget.hasSelectedOrigin ||
-        widget.origin.id != oldWidget.origin.id) {
+    // An origin chosen while the user types a search (a GPS fix arriving)
+    // keeps their query and picker; _restoreOriginField syncs the field.
+    if (!_isEditingOrigin &&
+        (widget.hasSelectedOrigin != oldWidget.hasSelectedOrigin ||
+            widget.origin.id != oldWidget.origin.id)) {
       _originSearchController.text =
           widget.hasSelectedOrigin ? widget.origin.label : '';
-      _isEditingOrigin = false;
     }
     final currentLocationMoved = widget.hasSelectedOrigin &&
         widget.origin.type == NavigationOriginType.currentLocation &&
@@ -1070,7 +1210,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
         widget.origin.id != oldWidget.origin.id ||
         currentLocationMoved ||
         widget.destination.id != oldWidget.destination.id) {
-      if (widget.hasSelectedOrigin) {
+      if (widget.hasSelectedOrigin && !_isEditingOrigin) {
         _showOriginPicker = false;
         _showBuildings = false;
       }

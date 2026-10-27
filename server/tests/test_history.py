@@ -129,6 +129,7 @@ class HistoryTests(unittest.TestCase):
         from app.utils.session import current_user_id
         from fastapi.security import HTTPAuthorizationCredentials
         with patch.object(login, 'supabase') as database, \
+                patch.object(login, 'verify_captcha'), \
                 patch.object(login.password_hash, 'verify', return_value=True):
             database.table.return_value.select.return_value.eq.return_value.execute.side_effect = [
                 SimpleNamespace(data=[{'id': 5, 'email': 'student@example.com', 'password': 'hash'}]),

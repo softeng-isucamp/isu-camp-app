@@ -1,6 +1,6 @@
 import unittest
 
-from app.utils.campus_data import building_for_map, photo_for_map, cover_photos_for_map
+from app.utils.campus_data import building_for_map, photo_for_map, photo_content, cover_photos_for_map
 
 
 class CampusDataTests(unittest.TestCase):
@@ -11,31 +11,31 @@ class CampusDataTests(unittest.TestCase):
             {"photo_id": 3, "building_id": 2, "position": 3, "content": r"\x03"},
             {"photo_id": 4, "building_id": 2, "position": 0, "content": r"\x04"},
         ]
-        self.assertEqual(cover_photos_for_map(rows, "building_id"), {
-            "1": "data:image/jpeg;base64,Ag==",
-            "2": "data:image/jpeg;base64,BA==",
+        self.assertEqual(cover_photos_for_map(rows, "building_id", lambda identifier: f"/photos/building/{identifier}"), {
+            "1": "/photos/building/2",
+            "2": "/photos/building/4",
         })
 
-    def test_location_cover_uses_new_mime_and_skips_invalid_content(self):
+    def test_location_cover_selection_does_not_inspect_image_content(self):
         rows = [
             {"photo_id": 1, "location_id": 9, "is_cover": True, "content": r"\xinvalid"},
             {"photo_id": 2, "location_id": 9, "position": 0, "content": r"\x89504e47", "mime_type": "image/png"},
         ]
-        self.assertEqual(cover_photos_for_map(rows, "location_id"), {
-            "9": "data:image/png;base64,iVBORw==",
+        self.assertEqual(cover_photos_for_map(rows, "location_id", lambda identifier: f"/photos/location/{identifier}"), {
+            "9": "/photos/location/1",
         })
 
     def test_supabase_bytea_photo(self):
-        self.assertEqual(photo_for_map({
-            "photo": r"\xffd8ffe0", "photo_mime_type": "image/jpeg",
-        }), "data:image/jpeg;base64,/9j/4A==")
+        self.assertEqual(photo_content({"content": r"\xffd8ffe0"}), b"\xff\xd8\xff\xe0")
 
     def test_binary_photo_and_missing_or_invalid_photo(self):
-        self.assertEqual(photo_for_map({
-            "photo": b"\x89PNG", "photo_mime_type": "image/png",
-        }), "data:image/png;base64,iVBORw==")
+        self.assertEqual(photo_content({"content": b"\x89PNG"}), b"\x89PNG")
         for photo in (None, "", r"\xinvalid"):
-            self.assertIsNone(photo_for_map({"photo": photo}))
+            self.assertIsNone(photo_content({"content": photo}))
+
+    def test_map_never_embeds_legacy_photo_bytes_or_data_urls(self):
+        self.assertIsNone(photo_for_map({"content": b"large photo", "photo": b"large photo"}))
+        self.assertIsNone(photo_for_map({"image_url": "data:image/png;base64,iVBORw=="}))
 
     def test_building_photo_is_returned_to_mobile(self):
         building = building_for_map({

@@ -1,6 +1,6 @@
 class UserSession {
   static String currentUsername = 'UserA1B2c3';
-  static String currentEmail = 'user@gmail.com';
+  static String currentEmail = '';
   static String? accessToken;
 
   static void setRegisteredUser({
@@ -14,13 +14,16 @@ class UserSession {
   static void setLoggedInUser({
     required String username,
     String? token,
+    String email = '',
   }) {
     accessToken = token;
     currentUsername = username.isNotEmpty ? username : 'UserA1B2c3';
+    currentEmail = email;
   }
 
   static void logout() {
     accessToken = null;
     currentUsername = 'UserA1B2c3';
+    currentEmail = '';
   }
 }

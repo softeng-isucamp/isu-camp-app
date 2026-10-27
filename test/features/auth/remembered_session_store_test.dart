@@ -22,6 +22,30 @@ void main() {
     UserSession.logout();
   });
 
+  test('updated profile persists only for an existing remembered session',
+      () async {
+    final token = tokenExpiringAt(DateTime.now().add(const Duration(hours: 1)));
+    UserSession.setLoggedInUser(
+        username: 'Karl', token: token, email: 'karl@example.com');
+    await RememberedSessionStore.updateProfile(
+        username: 'Karl_New', email: 'karl@example.com');
+    expect(
+        await const FlutterSecureStorage().read(key: 'remembered_access_token'),
+        isNull);
+    await RememberedSessionStore.save(
+        username: 'Karl',
+        email: 'karl@example.com',
+        token: token,
+        keepSignedIn: true);
+    await RememberedSessionStore.updateProfile(
+        username: 'Karl_New', email: 'karl@example.com');
+    UserSession.logout();
+    expect(UserSession.currentEmail, isEmpty);
+    expect(await RememberedSessionStore.restore(), isTrue);
+    expect(UserSession.currentUsername, 'Karl_New');
+    expect(UserSession.currentEmail, 'karl@example.com');
+  });
+
   test('restores a remembered, unexpired session', () async {
     final token = tokenExpiringAt(DateTime.now().add(const Duration(hours: 1)));
     await RememberedSessionStore.save(

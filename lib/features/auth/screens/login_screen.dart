@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../widgets/otp_code_input.dart';
+import '../widgets/sheet_controller_scope.dart';
+import '../widgets/captcha_verification.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'get_started_screen.dart';
@@ -23,7 +25,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  bool _isCaptchaChecked = false;
+  String? _captchaToken;
+  int _captchaRevision = 0;
   bool _isPasswordVisible = false;
   bool _isLoggingIn = false;
   bool _keepSignedIn = false;
@@ -92,9 +95,9 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (!_isCaptchaChecked) {
+    if (_captchaToken == null) {
       _showSnackBar(
-        'Please complete the verification checkbox.',
+        'Please complete human verification.',
         Colors.orangeAccent.shade700,
       );
       return;
@@ -106,6 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final response = await AuthService.login(
         identifier: identifier,
         password: password,
+        captchaToken: _captchaToken,
       );
 
       // Get actual user returned by database
@@ -116,12 +120,14 @@ class _LoginScreenState extends State<LoginScreen> {
       UserSession.setLoggedInUser(
         username: username,
         token: response['access_token'] as String?,
+        email: user['email'] as String? ?? '',
       );
 
       try {
         await RememberedSessionStore.save(
           username: username,
           token: response['access_token'] as String?,
+          email: user['email'] as String? ?? '',
           keepSignedIn: _keepSignedIn,
         );
       } catch (_) {
@@ -157,7 +163,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       _passwordController.clear();
-      setState(() => _isCaptchaChecked = false);
+      setState(() {
+        _captchaToken = null;
+        _captchaRevision++;
+      });
 
       // Remove "Exception: " from displayed message
       message = message.replaceFirst('Exception: ', '');
@@ -217,412 +226,292 @@ class _LoginScreenState extends State<LoginScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+        return SheetControllerScope(
+            controllers: [identifierController],
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
-                Text(
-                  'Reset Password',
-                  style: GoogleFonts.merriweather(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF0F4D20),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Enter your username or email. We will send a verification code to your registered email.',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12.5,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Username or Email',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: identifierController,
-                  decoration: InputDecoration(
-                    hintText: 'Username or Email',
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final identifier = identifierController.text.trim();
-
-                      if (identifier.isEmpty) {
-                        _showSnackBar(
-                          'Please enter your username or email.',
-                          Colors.redAccent,
-                        );
-                        return;
-                      }
-
-                      try {
-                        await AuthService.requestForgotPasswordOtp(
-                          identifier: identifier,
-                        );
-
-                        if (!mounted) return;
-
-                        _forgotSecurity.startOtpChallenge();
-
-                        Navigator.pop(sheetContext);
-
-                        _showVerifyCodeSheet(
-                          context,
-                          identifier,
-                        );
-
-                        _showSnackBar(
-                          'Verification code sent to your registered email.',
-                          const Color(0xFF0F751B),
-                        );
-                      } catch (error) {
-                        if (!mounted) return;
-
-                        String message = error.toString();
-                        message = message.replaceFirst('Exception: ', '');
-
-                        _showSnackBar(
-                          message,
-                          Colors.redAccent,
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F751B),
-                    ),
-                    child: Text(
-                      'Request Reset Code',
-                      style: GoogleFonts.montserrat(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
-                  ),
+                    Text(
+                      'Reset Password',
+                      style: GoogleFonts.merriweather(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF0F4D20),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter your username or email. We will send a verification code to your registered email.',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 12.5,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Username or Email',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: identifierController,
+                      decoration: InputDecoration(
+                        hintText: 'Username or Email',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final identifier = identifierController.text.trim();
+
+                          if (identifier.isEmpty) {
+                            _showSnackBar(
+                              'Please enter your username or email.',
+                              Colors.redAccent,
+                            );
+                            return;
+                          }
+
+                          try {
+                            await AuthService.requestForgotPasswordOtp(
+                              identifier: identifier,
+                            );
+
+                            if (!mounted) return;
+
+                            _forgotSecurity.startOtpChallenge();
+
+                            Navigator.pop(sheetContext);
+
+                            _showVerifyCodeSheet(
+                              context,
+                              identifier,
+                            );
+
+                            _showSnackBar(
+                              'Verification code sent to your registered email.',
+                              const Color(0xFF0F751B),
+                            );
+                          } catch (error) {
+                            if (!mounted) return;
+
+                            String message = error.toString();
+                            message = message.replaceFirst('Exception: ', '');
+
+                            _showSnackBar(
+                              message,
+                              Colors.redAccent,
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F751B),
+                        ),
+                        child: Text(
+                          'Request Reset Code',
+                          style: GoogleFonts.montserrat(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        );
+              ),
+            ));
       },
-    ).whenComplete(() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        identifierController.dispose();
-      });
-    });
+    );
   }
 
   // =========================================================================
   // POP-UP FLOW 2: Verify 6-Digit Code Sheet
   // =========================================================================
-  void _showVerifyCodeSheet(
-    BuildContext context,
-    String identifier,
-  ) {
-    final List<TextEditingController> otpControllers =
-        List.generate(6, (index) => TextEditingController());
-
-    final List<FocusNode> focusNodes = List.generate(6, (index) => FocusNode());
-
+  void _showVerifyCodeSheet(BuildContext context, String identifier) {
+    final codeController = TextEditingController();
+    bool verifying = false;
+    bool resending = false;
+    String? verificationError;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Text(
-                  'Verify Code',
-                  style: GoogleFonts.merriweather(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF0F4D20),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Enter the 6-digit verification code sent to your registered email.',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12.5,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                AnimatedBuilder(
-                  animation: _forgotSecurity,
-                  builder: (context, _) {
-                    final locked = _forgotSecurity.isVerificationLocked;
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            locked
-                                ? 'Try again in ${_forgotSecurity.format(_forgotSecurity.verificationLockRemaining)}'
-                                : 'Code expires in ${_forgotSecurity.format(_forgotSecurity.codeRemaining)} • ${_forgotSecurity.attemptsRemaining} attempts left',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 10.5,
-                              color: locked
-                                  ? Colors.redAccent
-                                  : Colors.grey.shade600,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _forgotSecurity.canResend
-                              ? () async {
-                                  try {
-                                    await AuthService.requestForgotPasswordOtp(
-                                      identifier: identifier,
-                                    );
-                                    if (!mounted) return;
-                                    _forgotSecurity.recordResend();
-                                    for (final controller in otpControllers) {
-                                      controller.clear();
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) =>
+          StatefulBuilder(builder: (sheetContext, updateSheet) {
+        Future<void> verify(String code) async {
+          if (verifying ||
+              resending ||
+              !_forgotSecurity.canVerify ||
+              code.length != 6) return;
+          updateSheet(() {
+            verifying = true;
+            verificationError = null;
+          });
+          try {
+            await AuthService.verifyForgotPasswordOtp(
+                identifier: identifier, otp: int.parse(code));
+            if (!mounted || !sheetContext.mounted || !_forgotSecurity.canVerify)
+              return;
+            _forgotSecurity.beginPasswordSetup();
+            Navigator.pop(sheetContext);
+            _showSetNewPasswordSheet(context, identifier);
+          } catch (error) {
+            if (!mounted || !sheetContext.mounted) return;
+            if (error is OtpException && error.isIncorrectCode) {
+              _forgotSecurity.recordIncorrectAttempt(
+                  serverRemaining: error.attemptsRemaining);
+              codeController.clear();
+            } else {
+              codeController.selection = TextSelection(
+                  baseOffset: 0, extentOffset: codeController.text.length);
+            }
+            updateSheet(() => verificationError =
+                AuthService.verificationErrorMessage(error));
+          } finally {
+            if (sheetContext.mounted) updateSheet(() => verifying = false);
+          }
+        }
+
+        return SheetControllerScope(
+            controllers: [codeController],
+            child: AnimatedBuilder(
+              animation: _forgotSecurity,
+              builder: (context, _) => SafeArea(
+                  top: false,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(24, 24, 24,
+                        MediaQuery.of(sheetContext).viewInsets.bottom + 24),
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                              child: Container(
+                                  width: 44,
+                                  height: 4,
+                                  margin: const EdgeInsets.only(bottom: 20),
+                                  decoration: BoxDecoration(
+                                      color: Colors.grey.shade300,
+                                      borderRadius: BorderRadius.circular(2)))),
+                          Text('Verify Code',
+                              style: GoogleFonts.merriweather(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF0F4D20))),
+                          const SizedBox(height: 8),
+                          Text(
+                              'Enter the 6-digit verification code sent to your registered email.',
+                              style: GoogleFonts.montserrat(
+                                  fontSize: 12.5, color: Colors.grey.shade700)),
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            Expanded(
+                                child: Text(
+                              _forgotSecurity.isVerificationLocked
+                                  ? 'Try again in ${_forgotSecurity.format(_forgotSecurity.verificationLockRemaining)}'
+                                  : 'Code expires in ${_forgotSecurity.format(_forgotSecurity.codeRemaining)} • ${_forgotSecurity.attemptsRemaining} attempts left',
+                              style: GoogleFonts.montserrat(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: _forgotSecurity.isVerificationLocked
+                                      ? Colors.redAccent
+                                      : Colors.grey.shade600),
+                            )),
+                            TextButton(
+                              onPressed: _forgotSecurity.canResend &&
+                                      !verifying &&
+                                      !resending
+                                  ? () async {
+                                      updateSheet(() {
+                                        resending = true;
+                                        verificationError = null;
+                                      });
+                                      try {
+                                        await AuthService
+                                            .requestForgotPasswordOtp(
+                                                identifier: identifier);
+                                        if (!mounted ||
+                                            !sheetContext.mounted ||
+                                            !_forgotSecurity.isOtpStage) return;
+                                        _forgotSecurity.recordResend();
+                                        codeController.clear();
+                                      } catch (error) {
+                                        if (sheetContext.mounted)
+                                          updateSheet(() => verificationError =
+                                              error.toString().replaceFirst(
+                                                  'Exception: ', ''));
+                                      } finally {
+                                        if (sheetContext.mounted)
+                                          updateSheet(() => resending = false);
+                                      }
                                     }
-                                    focusNodes.first.requestFocus();
-                                    _showSnackBar(
-                                      'A new verification code was sent.',
-                                      const Color(0xFF0F751B),
-                                    );
-                                  } catch (error) {
-                                    if (!mounted) return;
-                                    _showSnackBar(
-                                      error
-                                          .toString()
-                                          .replaceFirst('Exception: ', ''),
-                                      Colors.redAccent,
-                                    );
-                                  }
-                                }
-                              : null,
-                          child: Text(
-                            _forgotSecurity.canResend
-                                ? 'Resend'
-                                : 'Resend ${_forgotSecurity.format(_forgotSecurity.resendRemaining)}',
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: List.generate(6, (index) {
-                    return SizedBox(
-                      width: 42,
-                      height: 50,
-                      child: TextField(
-                        controller: otpControllers[index],
-                        focusNode: focusNodes[index],
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 1,
-                        obscureText: true,
-                        obscuringCharacter: '●',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: InputDecoration(
-                          counterText: '',
-                          filled: true,
-                          fillColor: const Color(0xFFDCDCDC),
-                          contentPadding: EdgeInsets.zero,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF0F751B),
-                              width: 2,
+                                  : null,
+                              child: Text(resending
+                                  ? 'Sending…'
+                                  : _forgotSecurity.canResend
+                                      ? 'Resend'
+                                      : 'Resend ${_forgotSecurity.format(_forgotSecurity.resendRemaining)}'),
                             ),
+                          ]),
+                          const SizedBox(height: 12),
+                          OtpCodeInput(
+                            controller: codeController,
+                            busy: verifying,
+                            enabled: _forgotSecurity.canVerify && !resending,
+                            error: verificationError,
+                            onActivity: () {
+                              _forgotSecurity.recordActivity();
+                              if (verificationError != null)
+                                updateSheet(() => verificationError = null);
+                            },
+                            onCompleted: verify,
                           ),
-                        ),
-                        onChanged: (value) {
-                          _forgotSecurity.recordActivity();
-                          if (value.isNotEmpty && index < 5) {
-                            focusNodes[index + 1].requestFocus();
-                          } else if (value.isEmpty && index > 0) {
-                            focusNodes[index - 1].requestFocus();
-                          }
-                        },
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (!_forgotSecurity.canVerify) {
-                        _showSnackBar(
-                          _forgotSecurity.isVerificationLocked
-                              ? 'Too many incorrect codes. Please wait for the timer.'
-                              : 'This verification code has expired.',
-                          Colors.redAccent,
-                        );
-                        return;
-                      }
-                      final code = otpControllers.map((c) => c.text).join();
-
-                      if (code.length != 6) {
-                        _showSnackBar(
-                          'Please enter all 6 digits.',
-                          Colors.redAccent,
-                        );
-                        return;
-                      }
-
-                      try {
-                        await AuthService.verifyForgotPasswordOtp(
-                          identifier: identifier,
-                          otp: int.parse(code),
-                        );
-
-                        if (!mounted) return;
-
-                        _forgotSecurity.beginPasswordSetup();
-
-                        Navigator.pop(sheetContext);
-
-                        _showSetNewPasswordSheet(
-                          context,
-                          identifier,
-                        );
-
-                        _showSnackBar(
-                          'OTP verified successfully.',
-                          const Color(0xFF0F751B),
-                        );
-                      } catch (error) {
-                        if (!mounted) return;
-
-                        final remaining = error is OtpException
-                            ? error.attemptsRemaining
-                            : null;
-                        _forgotSecurity.recordIncorrectAttempt(
-                          serverRemaining: remaining,
-                        );
-                        for (final controller in otpControllers) {
-                          controller.clear();
-                        }
-                        focusNodes.first.requestFocus();
-
-                        String message = error.toString();
-                        message = message.replaceFirst('Exception: ', '');
-
-                        _showSnackBar(
-                          message,
-                          Colors.redAccent,
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F751B),
-                    ),
-                    child: Text(
-                      'Verify and Continue',
-                      style: GoogleFonts.montserrat(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+                        ]),
+                  )),
+            ));
+      }),
     ).whenComplete(() {
-      for (final controller in otpControllers) {
-        controller.dispose();
-      }
-
-      for (final focusNode in focusNodes) {
-        focusNode.dispose();
-      }
-      if (_forgotSecurity.stage == VerificationStage.otp) {
-        _forgotSecurity.cancel();
-      }
+      if (_forgotSecurity.isOtpStage) _forgotSecurity.cancel();
     });
   }
 
-  // =========================================================================
-  // POP-UP FLOW 3: Set New Password Sheet
-  // =========================================================================
   void _showSetNewPasswordSheet(
     BuildContext context,
     String identifier,
@@ -638,277 +527,279 @@ class _LoginScreenState extends State<LoginScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final text = newPassController.text;
+        return SheetControllerScope(
+            controllers: [newPassController, confirmPassController],
+            child: StatefulBuilder(
+              builder: (sheetContext, setSheetState) {
+                final text = newPassController.text;
 
-            final bool hasMinLength = text.length >= 8;
-            final bool hasMixedCase = text.contains(RegExp(r'[a-z]')) &&
-                text.contains(RegExp(r'[A-Z]'));
-            final bool hasNumber = text.contains(RegExp(r'[0-9]'));
-            final bool hasSpecialChar = text.contains(
-              RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\+=~/\\\[\]]'),
-            );
+                final bool hasMinLength = text.length >= 8;
+                final bool hasMixedCase = text.contains(RegExp(r'[a-z]')) &&
+                    text.contains(RegExp(r'[A-Z]'));
+                final bool hasNumber = text.contains(RegExp(r'[0-9]'));
+                final bool hasSpecialChar = text.contains(
+                  RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\+=~/\\\[\]]'),
+                );
 
-            Widget buildRequirement(String label, bool met) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: met ? const Color(0xFF0F751B) : Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: GoogleFonts.montserrat(
-                        fontSize: 11,
-                        color: met ? Colors.black87 : Colors.black54,
-                        fontWeight: met ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 44,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 20),
+                Widget buildRequirement(String label, bool met) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2),
+                            shape: BoxShape.circle,
+                            color: met ? const Color(0xFF0F751B) : Colors.grey,
                           ),
                         ),
-                      ),
-                      Text(
-                        'Set New Password',
-                        style: GoogleFonts.merriweather(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F4D20),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedBuilder(
-                        animation: _forgotSecurity,
-                        builder: (context, _) => Text(
-                          'Session expires in ${_forgotSecurity.format(_forgotSecurity.setupRemaining)}',
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
                           style: GoogleFonts.montserrat(
-                            fontSize: 10.5,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                            color: met ? Colors.black87 : Colors.black54,
+                            fontWeight: met ? FontWeight.w600 : FontWeight.w400,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'New Password',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: newPassController,
-                        obscureText: !isNewVisible,
-                        onChanged: (value) {
-                          _forgotSecurity.recordActivity();
-                          setSheetState(() {});
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Enter new password',
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              isNewVisible
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              _forgotSecurity.recordActivity();
-                              setSheetState(() {
-                                isNewVisible = !isNewVisible;
-                              });
-                            },
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      buildRequirement(
-                        'At least 8 characters',
-                        hasMinLength,
-                      ),
-                      buildRequirement(
-                        'Mixed case letters (upper & lower)',
-                        hasMixedCase,
-                      ),
-                      buildRequirement(
-                        'At least one number',
-                        hasNumber,
-                      ),
-                      buildRequirement(
-                        'At least one special character',
-                        hasSpecialChar,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Confirm Password',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: confirmPassController,
-                        obscureText: !isConfirmVisible,
-                        onChanged: (_) => _forgotSecurity.recordActivity(),
-                        decoration: InputDecoration(
-                          hintText: 'Re-enter new password',
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              isConfirmVisible
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              _forgotSecurity.recordActivity();
-                              setSheetState(() {
-                                isConfirmVisible = !isConfirmVisible;
-                              });
-                            },
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            final newPassword = newPassController.text;
-                            final confirmPassword = confirmPassController.text;
+                      ],
+                    ),
+                  );
+                }
 
-                            if (newPassword.isEmpty ||
-                                confirmPassword.isEmpty) {
-                              _showSnackBar(
-                                'Please enter and confirm your new password.',
-                                Colors.redAccent,
-                              );
-                              return;
-                            }
-
-                            if (newPassword != confirmPassword) {
-                              _showSnackBar(
-                                'Passwords do not match.',
-                                Colors.redAccent,
-                              );
-                              return;
-                            }
-
-                            if (!hasMinLength ||
-                                !hasMixedCase ||
-                                !hasNumber ||
-                                !hasSpecialChar) {
-                              _showSnackBar(
-                                'Please meet all password requirements.',
-                                Colors.orangeAccent,
-                              );
-                              return;
-                            }
-
-                            try {
-                              await AuthService.resetForgotPassword(
-                                identifier: identifier,
-                                password: newPassword,
-                                confirmPassword: confirmPassword,
-                              );
-
-                              if (!mounted) return;
-
-                              Navigator.pop(sheetContext);
-
-                              _showSnackBar(
-                                'Password updated successfully. You can now log in.',
-                                const Color(0xFF0F751B),
-                              );
-                            } catch (error) {
-                              if (!mounted) return;
-
-                              String message = error.toString();
-                              message = message.replaceFirst(
-                                'Exception: ',
-                                '',
-                              );
-
-                              _showSnackBar(
-                                message,
-                                Colors.redAccent,
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0F751B),
-                          ),
-                          child: Text(
-                            'Update Password',
-                            style: GoogleFonts.montserrat(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                return Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
                   ),
-                ),
-              ),
-            );
-          },
-        );
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(28)),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 44,
+                              height: 4,
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'Set New Password',
+                            style: GoogleFonts.merriweather(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0F4D20),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          AnimatedBuilder(
+                            animation: _forgotSecurity,
+                            builder: (context, _) => Text(
+                              'Session expires in ${_forgotSecurity.format(_forgotSecurity.setupRemaining)}',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 10.5,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'New Password',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: newPassController,
+                            obscureText: !isNewVisible,
+                            onChanged: (value) {
+                              _forgotSecurity.recordActivity();
+                              setSheetState(() {});
+                            },
+                            decoration: InputDecoration(
+                              hintText: 'Enter new password',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  isNewVisible
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  _forgotSecurity.recordActivity();
+                                  setSheetState(() {
+                                    isNewVisible = !isNewVisible;
+                                  });
+                                },
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          buildRequirement(
+                            'At least 8 characters',
+                            hasMinLength,
+                          ),
+                          buildRequirement(
+                            'Mixed case letters (upper & lower)',
+                            hasMixedCase,
+                          ),
+                          buildRequirement(
+                            'At least one number',
+                            hasNumber,
+                          ),
+                          buildRequirement(
+                            'At least one special character',
+                            hasSpecialChar,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Confirm Password',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: confirmPassController,
+                            obscureText: !isConfirmVisible,
+                            onChanged: (_) => _forgotSecurity.recordActivity(),
+                            decoration: InputDecoration(
+                              hintText: 'Re-enter new password',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  isConfirmVisible
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  _forgotSecurity.recordActivity();
+                                  setSheetState(() {
+                                    isConfirmVisible = !isConfirmVisible;
+                                  });
+                                },
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                final newPassword = newPassController.text;
+                                final confirmPassword =
+                                    confirmPassController.text;
+
+                                if (newPassword.isEmpty ||
+                                    confirmPassword.isEmpty) {
+                                  _showSnackBar(
+                                    'Please enter and confirm your new password.',
+                                    Colors.redAccent,
+                                  );
+                                  return;
+                                }
+
+                                if (newPassword != confirmPassword) {
+                                  _showSnackBar(
+                                    'Passwords do not match.',
+                                    Colors.redAccent,
+                                  );
+                                  return;
+                                }
+
+                                if (!hasMinLength ||
+                                    !hasMixedCase ||
+                                    !hasNumber ||
+                                    !hasSpecialChar) {
+                                  _showSnackBar(
+                                    'Please meet all password requirements.',
+                                    Colors.orangeAccent,
+                                  );
+                                  return;
+                                }
+
+                                try {
+                                  await AuthService.resetForgotPassword(
+                                    identifier: identifier,
+                                    password: newPassword,
+                                    confirmPassword: confirmPassword,
+                                  );
+
+                                  if (!mounted) return;
+
+                                  Navigator.pop(sheetContext);
+
+                                  _showSnackBar(
+                                    'Password updated successfully. You can now log in.',
+                                    const Color(0xFF0F751B),
+                                  );
+                                } catch (error) {
+                                  if (!mounted) return;
+
+                                  String message = error.toString();
+                                  message = message.replaceFirst(
+                                    'Exception: ',
+                                    '',
+                                  );
+
+                                  _showSnackBar(
+                                    message,
+                                    Colors.redAccent,
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0F751B),
+                              ),
+                              child: Text(
+                                'Update Password',
+                                style: GoogleFonts.montserrat(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ));
       },
     ).whenComplete(() {
-      newPassController.dispose();
-      confirmPassController.dispose();
       _forgotSecurity.cancel();
     });
   }
@@ -1112,7 +1003,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             value: _keepSignedIn,
                             onChanged: (value) =>
                                 setState(() => _keepSignedIn = value ?? false),
-                            activeColor: const Color(0xFF0F751B),
+                            activeColor: const Color.fromARGB(255, 49, 94, 243),
                           ),
                           GestureDetector(
                             onTap: () =>
@@ -1125,39 +1016,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 6),
 
-                      // reCAPTCHA Box
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9F9F9),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            Checkbox(
-                              value: _isCaptchaChecked,
-                              activeColor: const Color(0xFF1B62D4),
-                              onChanged: (value) => setState(
-                                  () => _isCaptchaChecked = value ?? false),
-                            ),
-                            Text("I'm not a robot",
-                                style: GoogleFonts.montserrat(
-                                    fontSize: 13, fontWeight: FontWeight.w500)),
-                            const Spacer(),
-                            Column(
-                              children: [
-                                const Icon(Icons.autorenew,
-                                    color: Color(0xFF1B62D4), size: 22),
-                                Text('reCAPTCHA',
-                                    style: GoogleFonts.montserrat(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ],
-                        ),
+                      CaptchaVerification(
+                        key: ValueKey(_captchaRevision),
+                        enabled: !_isLoggingIn && !_isLoginLocked,
+                        onToken: (token) =>
+                            setState(() => _captchaToken = token),
                       ),
                       const SizedBox(height: 10),
 

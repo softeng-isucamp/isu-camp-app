@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human verification</title>
+<style>
+body { margin: 0; padding: 20px 8px; font: 16px system-ui; color: #173b26; background: #fff; }
+#captcha { display: flex; justify-content: center; }
+#status { text-align: center; padding: 12px; }
+</style></head><body>
+<div id="captcha"></div><p id="status" role="status">Loading human verification…</p>
+<script>
+const settings = __CAPTCHA_SETTINGS__;
+function send(type, token = '') {
+  const message = JSON.stringify({type, token});
+  if (window.CaptchaBridge) window.CaptchaBridge.postMessage(message);
+  else if (settings.parentOrigin) window.parent.postMessage(message, settings.parentOrigin);
+}
+window.captchaReady = () => {
+  document.getElementById('status').textContent = '';
+  grecaptcha.render('captcha', {
+    sitekey: settings.siteKey,
+    callback: token => send('verified', token),
+    'expired-callback': () => send('expired'),
+    'error-callback': () => { document.getElementById('status').textContent = 'Verification could not load. Close and try again.'; send('error'); }
+  });
+};
+</script>
+<script src="https://www.google.com/recaptcha/api.js?onload=captchaReady&render=explicit" async defer
+onerror="document.getElementById('status').textContent='Verification could not load. Close and try again.'; send('error');"></script>
+</body></html>

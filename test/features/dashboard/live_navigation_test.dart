@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -10,12 +11,13 @@ import 'package:http/testing.dart';
 import 'package:isu_camp_app/features/dashboard/screens/map_view_screen.dart';
 import 'package:isu_camp_app/features/dashboard/widgets/navigation_sheets.dart';
 import 'package:isu_camp_app/features/dashboard/models/campus_models.dart';
+import 'package:latlong2/latlong.dart';
 
 class TestGps extends GeolocatorPlatform {
   final fixes = StreamController<Position>.broadcast();
   Position current = fix(16.72, 121.69);
   static Position fix(double latitude, double longitude,
-          {double accuracy = 5}) =>
+          {double accuracy = 5, double speed = 1, double heading = 0}) =>
       Position(
           latitude: latitude,
           longitude: longitude,
@@ -23,9 +25,9 @@ class TestGps extends GeolocatorPlatform {
           accuracy: accuracy,
           altitude: 0,
           altitudeAccuracy: 0,
-          heading: 0,
+          heading: heading,
           headingAccuracy: 0,
-          speed: 1,
+          speed: speed,
           speedAccuracy: 0);
   @override
   Future<bool> isLocationServiceEnabled() async => true;
@@ -39,8 +41,10 @@ class TestGps extends GeolocatorPlatform {
   @override
   Stream<Position> getPositionStream({LocationSettings? locationSettings}) =>
       fixes.stream;
-  void move(double latitude, double longitude, {double accuracy = 5}) {
-    current = fix(latitude, longitude, accuracy: accuracy);
+  void move(double latitude, double longitude,
+      {double accuracy = 5, double speed = 1, double heading = 0}) {
+    current = fix(latitude, longitude,
+        accuracy: accuracy, speed: speed, heading: heading);
     fixes.add(current);
   }
 }
@@ -61,6 +65,7 @@ void main() {
         await tester.binding.setSurfaceSize(null);
       });
       var requests = 0;
+      var failNextRoute = false;
       var elapsed = Duration.zero;
       final tile = File('assets/images/logo_isu_png.png').readAsBytesSync();
       await http.runWithClient(() async {
@@ -111,7 +116,27 @@ void main() {
                 .route
                 .mode,
             mode);
+        // Moving fast to the east while on the north-bound route: the map
+        // keeps the route ahead at the top, not the direction of travel, and
+        // the camera keeps moving between one-second GPS fixes.
+        final camera = () => tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!
+            .camera;
+        gps.move(16.7202, 121.69, speed: 10, heading: 90);
+        await tester.pump();
+        elapsed = const Duration(seconds: 1);
+        await tester.pump(const Duration(seconds: 1));
+        expect((camera().rotation + 180) % 360 - 180, closeTo(0, 1));
+        // At least one second ahead at 10 m/s, at most the 1.5 s cap.
+        expect(const Distance()(const LatLng(16.7202, 121.69), camera().center),
+            inInclusiveRange(10, 15));
+        expect(camera().center.longitude, greaterThan(121.69));
+        elapsed = Duration.zero;
+
         gps.move(16.7209, 121.69);
+        await tester.pump();
+        // After the follow ticks above, the fix can rebuild one frame later.
         await tester.pump();
         expect(find.textContaining('Turn right'), findsOneWidget);
         final advanced = tester
@@ -119,6 +144,8 @@ void main() {
             .progress!;
         expect(advanced.remainingMeters, lessThan(initial.remainingMeters));
         final beforeReroute = requests;
+        // The first off-route refresh fails, so the retry path is exercised.
+        failNextRoute = true;
         gps.move(16.7205, 121.6895);
         await tester.pump();
         gps.move(16.7205, 121.6895);
@@ -174,9 +201,11 @@ void main() {
                 if (request.url.path == '/campus/routes') {
                   requests++;
                   expect(jsonDecode(request.body)['mode'], mode.name);
-                  if (requests == 3)
+                  if (failNextRoute) {
+                    failNextRoute = false;
                     return http.Response(
                         '{"detail":"Temporarily unavailable"}', 503);
+                  }
                   return http.Response(
                       jsonEncode({
                         'routes': [

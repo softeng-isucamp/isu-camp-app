@@ -10,12 +10,16 @@ class RouteProjection {
   final double totalMeters;
   const RouteProjection(this.alongMeters, this.awayMeters, this.totalMeters);
 
-  static RouteProjection locate(List<LatLng> points, LatLng position) {
+  /// Only route between [fromMeters] and [toMeters] along it is searched, so
+  /// a nearby later leg can't be mistaken for the one the user is on.
+  static RouteProjection locate(List<LatLng> points, LatLng position,
+      {double fromMeters = 0, double toMeters = double.infinity}) {
     if (points.isEmpty) return const RouteProjection(0, double.infinity, 0);
     const distance = Distance();
     var total = 0.0;
     var along = 0.0;
-    var away = distance(position, points.first);
+    var away =
+        fromMeters <= 0 ? distance(position, points.first) : double.infinity;
     final scale = math.cos(position.latitude * math.pi / 180);
     for (var i = 1; i < points.length; i++) {
       final a = points[i - 1];
@@ -25,12 +29,24 @@ class RouteProjection {
       final px = (position.longitude - a.longitude) * scale;
       final py = position.latitude - a.latitude;
       final square = dx * dx + dy * dy;
-      final t =
-          square == 0 ? 0.0 : ((px * dx + py * dy) / square).clamp(0.0, 1.0);
+      final length = distance(a, b);
+      if (total > toMeters || total + length < fromMeters) {
+        total += length;
+        continue;
+      }
+      // Distance rounds to whole meters, so a tiny segment can measure 0.
+      final t = square == 0
+          ? 0.0
+          : ((px * dx + py * dy) / square).clamp(
+              length == 0
+                  ? 0.0
+                  : ((fromMeters - total) / length).clamp(0.0, 1.0),
+              length == 0
+                  ? 1.0
+                  : ((toMeters - total) / length).clamp(0.0, 1.0));
       final projected = LatLng(
           a.latitude + dy * t, a.longitude + (b.longitude - a.longitude) * t);
       final separation = distance(position, projected);
-      final length = distance(a, b);
       if (separation < away) {
         away = separation;
         along = total + length * t;

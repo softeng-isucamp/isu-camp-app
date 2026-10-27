@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'help_screen.dart';
 import '../services/user_session.dart';
 import '../services/remembered_session_store.dart';
 import '../services/auth_service.dart';
+import '../widgets/otp_code_input.dart';
 import '../services/verification_security_controller.dart';
 import '../../onboarding/screens/welcome_greeting_screen.dart';
 
@@ -40,10 +40,8 @@ class _RegisterScreenState extends State<RegisterScreen>
   final TextEditingController _emailController = TextEditingController();
 
   // Step 2 Controllers
-  final List<TextEditingController> _otpControllers =
-      List.generate(6, (index) => TextEditingController());
-  final List<FocusNode> _otpFocusNodes =
-      List.generate(6, (index) => FocusNode());
+  final _otpController = TextEditingController();
+  String? _otpError;
 
   // Step 3 Controllers & Flags
   final TextEditingController _passwordController = TextEditingController();
@@ -134,9 +132,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   void _handleTimeout(VerificationTimeoutReason reason) {
     if (!mounted || _currentStep == 1) return;
-    for (final controller in _otpControllers) {
-      controller.clear();
-    }
+    _otpController.clear();
     _passwordController.clear();
     _confirmPasswordController.clear();
     final message = switch (reason) {
@@ -175,12 +171,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     _controller.dispose();
     _usernameController.dispose();
     _emailController.dispose();
-    for (final c in _otpControllers) {
-      c.dispose();
-    }
-    for (final f in _otpFocusNodes) {
-      f.dispose();
-    }
+    _otpController.dispose();
+
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -240,7 +232,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         _currentStep = 2;
       });
       _security.startOtpChallenge();
-      _otpFocusNodes.first.requestFocus();
 
       _showSnackBar(
         'Verification code sent to $email.',
@@ -263,60 +254,41 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   // --- Step 2 Navigation: Validate 6-Digit Code ---
   Future<void> _handleStep2Verify() async {
-    if (_isVerifyingCode || !_security.canVerify) return;
-    final code = _otpControllers.map((c) => c.text).join();
-
-    if (code.length != 6) {
-      _showSnackBar(
-        'Please enter the full 6-digit verification code.',
-        Colors.redAccent,
-      );
-      return;
-    }
-
-    setState(() => _isVerifyingCode = true);
+    if (_isVerifyingCode || _isResendingCode || !_security.canVerify) return;
+    final code = _otpController.text;
+    if (code.length != 6) return;
+    setState(() {
+      _isVerifyingCode = true;
+      _otpError = null;
+    });
     try {
       await AuthService.verifySignupOtp(
-        email: _emailController.text.trim(),
-        otp: int.parse(code),
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _currentStep = 3;
-      });
+          email: _emailController.text.trim(), otp: int.parse(code));
+      if (!mounted || _currentStep != 2 || !_security.canVerify) return;
+      setState(() => _currentStep = 3);
       _security.beginPasswordSetup();
-
-      _showSnackBar(
-        'Email verified! Now set a strong password.',
-        const Color(0xFF0F751B),
-      );
     } catch (error) {
-      if (!mounted) return;
-
-      final remaining = error is OtpException ? error.attemptsRemaining : null;
-      _security.recordIncorrectAttempt(serverRemaining: remaining);
-      for (final controller in _otpControllers) {
-        controller.clear();
+      if (!mounted || _currentStep != 2) return;
+      if (error is OtpException && error.isIncorrectCode) {
+        _security.recordIncorrectAttempt(
+            serverRemaining: error.attemptsRemaining);
+        _otpController.clear();
+      } else {
+        _otpController.selection = TextSelection(
+            baseOffset: 0, extentOffset: _otpController.text.length);
       }
-      _otpFocusNodes.first.requestFocus();
-
-      String message = error.toString();
-      message = message.replaceFirst('Exception: ', '');
-
-      _showSnackBar(
-        message,
-        Colors.redAccent,
-      );
+      setState(() => _otpError = AuthService.verificationErrorMessage(error));
     } finally {
       if (mounted) setState(() => _isVerifyingCode = false);
     }
   }
 
   Future<void> _handleResendSignupCode() async {
-    if (!_security.canResend || _isResendingCode) return;
-    setState(() => _isResendingCode = true);
+    if (!_security.canResend || _isResendingCode || _isVerifyingCode) return;
+    setState(() {
+      _isResendingCode = true;
+      _otpError = null;
+    });
     try {
       await AuthService.requestSignupOtp(
         username: _usernameController.text.trim(),
@@ -324,10 +296,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       );
       if (!mounted) return;
       _security.recordResend();
-      for (final controller in _otpControllers) {
-        controller.clear();
-      }
-      _otpFocusNodes.first.requestFocus();
+      _otpController.clear();
+
       _showSnackBar(
         'A new verification code was sent.',
         const Color(0xFF0F751B),
@@ -407,12 +377,14 @@ class _RegisterScreenState extends State<RegisterScreen>
       UserSession.setLoggedInUser(
         username: registeredUsername,
         token: response['access_token'] as String?,
+        email: registeredEmail,
       );
 
       try {
         await RememberedSessionStore.save(
           username: registeredUsername,
           token: response['access_token'] as String?,
+          email: registeredEmail,
           keepSignedIn: _keepSignedIn,
         );
       } catch (_) {
@@ -1128,57 +1100,17 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
           const SizedBox(height: 12),
 
-          // 6 OTP Digit Boxes
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(6, (index) {
-              return SizedBox(
-                width: 40,
-                height: 48,
-                child: TextField(
-                  controller: _otpControllers[index],
-                  focusNode: _otpFocusNodes[index],
-                  enabled: !_security.isVerificationLocked && !_isVerifyingCode,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  maxLength: 1,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
-                  decoration: InputDecoration(
-                    counterText: '',
-                    filled: true,
-                    fillColor: const Color(0xFFF3F3F3),
-                    contentPadding: EdgeInsets.zero,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF0F751B),
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  onChanged: (value) {
-                    _security.recordActivity();
-                    if (value.isNotEmpty && index < 5) {
-                      _otpFocusNodes[index + 1].requestFocus();
-                    } else if (value.isEmpty && index > 0) {
-                      _otpFocusNodes[index - 1].requestFocus();
-                    }
-                  },
-                ),
-              );
-            }),
+          OtpCodeInput(
+            controller: _otpController,
+            busy: _isVerifyingCode,
+            enabled: _security.canVerify && !_isResendingCode,
+            error: _otpError,
+            onActivity: () {
+              _security.recordActivity();
+              if (_otpError != null) setState(() => _otpError = null);
+            },
+            onCompleted: (_) => _handleStep2Verify(),
           ),
-
           const SizedBox(height: 14),
 
           // Resend Code & Edit Email Row
@@ -1186,15 +1118,16 @@ class _RegisterScreenState extends State<RegisterScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               GestureDetector(
-                onTap: () {
-                  _security.cancel();
-                  for (final controller in _otpControllers) {
-                    controller.clear();
-                  }
-                  setState(() {
-                    _currentStep = 1;
-                  });
-                },
+                onTap: _isVerifyingCode || _isResendingCode
+                    ? null
+                    : () {
+                        _security.cancel();
+                        _otpError = null;
+                        _otpController.clear();
+                        setState(() {
+                          _currentStep = 1;
+                        });
+                      },
                 child: Text(
                   'Edit Email',
                   style: GoogleFonts.montserrat(
@@ -1231,44 +1164,6 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
 
           const SizedBox(height: 22),
-
-          // Verify and Proceed Button
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _security.canVerify && !_isVerifyingCode
-                  ? _handleStep2Verify
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F751B),
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: _isVerifyingCode
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      _security.isVerificationLocked
-                          ? 'Try again in '
-                              '${_security.format(_security.verificationLockRemaining)}'
-                          : 'Verify & Continue',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-            ),
-          ),
         ],
       ),
     );
@@ -1632,9 +1527,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                             onTap: () {
                               if (_currentStep > 1) {
                                 _security.cancel();
-                                for (final controller in _otpControllers) {
-                                  controller.clear();
-                                }
+                                _otpController.clear();
                                 _passwordController.clear();
                                 _confirmPasswordController.clear();
                               }

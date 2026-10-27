@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'features/auth/screens/get_started_screen.dart';
 import 'features/auth/services/remembered_session_store.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
+import 'features/offline/services/offline_pack_service.dart';
 
 void main() {
   // Keep full diagnostics for intermittent debug failures. Flutter normally
@@ -13,6 +14,9 @@ void main() {
     };
     return true;
   }());
+  WidgetsFlutterBinding.ensureInitialized();
+  // Make whatever is already downloaded usable before the first frame.
+  OfflinePackService.instance.load();
   runApp(const MyApp());
 }
 

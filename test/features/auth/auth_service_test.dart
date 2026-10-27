@@ -6,6 +6,20 @@ import 'package:http/testing.dart';
 import 'package:isu_camp_app/features/auth/services/auth_service.dart';
 
 void main() {
+  test('login forwards the real CAPTCHA token to the backend', () async {
+    await http.runWithClient(() async {
+      await AuthService.login(
+          identifier: 'Karl',
+          password: 'password',
+          captchaToken: 'provider-token');
+    },
+        () => MockClient((request) async {
+              expect(
+                  jsonDecode(request.body)['captcha_token'], 'provider-token');
+              return http.Response('{"success":true}', 200);
+            }));
+  });
+
   Future<void> expectLoginError(dynamic body, String message,
       {Map<String, String> headers = const {}}) async {
     await http.runWithClient(() async {
