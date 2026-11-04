@@ -13,7 +13,7 @@ void main() {
     testWidgets(
         '${indoor ? 'indoor' : 'building'} search opens location dialog and preserves destination',
         (tester) async {
-      final bytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+      final bytes = File('assets/images/logo_isu.webp').readAsBytesSync();
       await tester.binding.setSurfaceSize(const Size(1200, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await http.runWithClient(() async {

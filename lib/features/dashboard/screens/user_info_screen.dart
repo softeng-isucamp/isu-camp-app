@@ -85,7 +85,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                               minHeight: 844,
                               maxHeight: 844,
                               child: Image.asset(
-                                  'assets/images/Appdev_background1.png',
+                                  'assets/images/Appdev_background1.webp',
                                   width: 390,
                                   height: 844,
                                   fit: BoxFit.fill,

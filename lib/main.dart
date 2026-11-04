@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'features/auth/screens/get_started_screen.dart';
 import 'features/auth/services/remembered_session_store.dart';
@@ -15,6 +17,14 @@ void main() {
     return true;
   }());
   WidgetsFlutterBinding.ensureInitialized();
+  // The bundled fonts are OFL-licensed, which requires shipping their licenses.
+  LicenseRegistry.addLicense(() async* {
+    for (final family in const ['Montserrat', 'AntonSC']) {
+      final license =
+          await rootBundle.loadString('assets/google_fonts/OFL-$family.txt');
+      yield LicenseEntryWithLineBreaks(['google_fonts'], license);
+    }
+  });
   // Make whatever is already downloaded usable before the first frame.
   OfflinePackService.instance.load();
   runApp(const MyApp());

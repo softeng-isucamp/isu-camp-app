@@ -57,7 +57,7 @@ void main() {
       await gps.fixes.close();
       await tester.binding.setSurfaceSize(null);
     });
-    final tile = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    final tile = File('assets/images/logo_isu.webp').readAsBytesSync();
     var routeRequests = 0;
 
     await http.runWithClient(() async {

@@ -175,7 +175,7 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
                           height: 28,
                           child: ClipOval(
                             child: Image.asset(
-                              'assets/images/logo_kumpas_app.png',
+                              'assets/images/logo_kumpas_app.webp',
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(
