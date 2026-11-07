@@ -85,7 +85,7 @@ class ProfileService {
       'your email';
 
   static Future<void> verifyPasswordChangeCode(int otp) =>
-      _post('/password/verify-otp', {'otp': otp}, 'Code verification failed.',
+      _post('/password/verify-otp', {'otp': otp}, 'Could not verify the code. Please try again.',
           codeStep: true);
 
   static Future<void> changePassword(
@@ -108,7 +108,7 @@ class ProfileService {
   static Future<AccountProfile> confirmEmailChange(
       String email, int otp) async {
     final data = await _post('/email/verify-otp',
-        {'email': email.trim(), 'otp': otp}, 'Code verification failed.',
+        {'email': email.trim(), 'otp': otp}, 'Could not verify the code. Please try again.',
         codeStep: true);
     return AccountProfile(
         username: data['username'] as String, email: data['email'] as String);

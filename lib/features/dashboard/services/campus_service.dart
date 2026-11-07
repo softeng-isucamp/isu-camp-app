@@ -41,7 +41,7 @@ class CampusService {
       if (response.statusCode != 200) {
         throw Exception(data['detail'] is String
             ? data['detail']
-            : 'Unable to load routes for this transport mode.');
+            : 'Could not load routes for this travel mode.');
       }
       return (data['routes'] as List)
           .map((r) => WalkingRoute.fromJson(r as Map<String, dynamic>))

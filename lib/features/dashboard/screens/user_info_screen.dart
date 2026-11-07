@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -538,8 +539,8 @@ class _HistorySubScreenState extends State<_HistorySubScreen> {
     super.dispose();
   }
 
-  String _message(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
+  String _message(Object error) => ErrorMessages.present(
+      error, 'Could not load your history. Please try again.');
 
   Future<void> _loadHistory() async {
     setState(() {
@@ -600,8 +601,12 @@ class _HistorySubScreenState extends State<_HistorySubScreen> {
       });
     } catch (error) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_message(error))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(ErrorMessages.present(
+                error,
+                entry == null
+                    ? 'Could not clear your history. Please try again.'
+                    : 'Could not delete this history item. Please try again.'))));
     } finally {
       if (mounted) setState(() => _mutating = false);
     }

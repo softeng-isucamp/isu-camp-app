@@ -29,7 +29,7 @@ class CaptchaService {
 
     if (response.statusCode == 404 || response.statusCode == 405) {
       throw const CaptchaException(
-          'Human verification is not available on this server yet. Please contact support.');
+          'Human verification is unavailable. Please try again later.');
     }
 
     dynamic data;
@@ -42,11 +42,11 @@ class CaptchaService {
     final code = detail is Map ? detail['code'] : null;
     if (code == 'captcha_not_configured') {
       throw const CaptchaException(
-          'Human verification has not been set up yet. Please contact support.');
+          'Human verification is unavailable. Please try again later.');
     }
     if (code == 'captcha_origin_not_allowed') {
       throw const CaptchaException(
-          'Human verification is not enabled for this app address. Please contact support.');
+          'Human verification is unavailable here. Please try again later.');
     }
     if (response.statusCode != 200 ||
         data is! Map ||

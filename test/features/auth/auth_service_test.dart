@@ -70,7 +70,7 @@ void main() {
         ]
       },
     ]) {
-      await expectLoginError(body, 'Login failed.');
+      await expectLoginError(body, 'Could not sign in. Please try again.');
     }
   });
 

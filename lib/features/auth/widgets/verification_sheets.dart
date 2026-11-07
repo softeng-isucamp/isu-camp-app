@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -13,8 +14,6 @@ import 'otp_code_input.dart';
 const _green = Color(0xFF0F751B);
 const _darkGreen = Color(0xFF0F4D20);
 
-String _message(Object error) =>
-    error.toString().replaceFirst('Exception: ', '');
 
 Widget _handle() => Center(
     child: Container(
@@ -157,7 +156,7 @@ class _VerifyCodeSheetState extends State<VerifyCodeSheet>
       security.recordResend();
       _code.clear();
     } catch (error) {
-      if (mounted) setState(() => _error = _message(error));
+      if (mounted) setState(() => _error = ErrorMessages.present(error, 'Could not send the verification code. Please try again.'));
     } finally {
       if (mounted) setState(() => _resending = false);
     }
@@ -347,13 +346,13 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     final confirm = _confirmPassword.text;
     final problem =
         widget.requireCurrentPassword && _currentPassword.text.isEmpty
-            ? 'Please enter your current password.'
+            ? 'Enter your current password.'
             : password.isEmpty || confirm.isEmpty
-                ? 'Please enter and confirm your new password.'
+                ? 'Enter and confirm your new password.'
                 : password != confirm
                     ? 'Passwords do not match.'
                     : !meetsRules
-                        ? 'Please meet all password requirements.'
+                        ? 'Meet all password requirements.'
                         : null;
     if (problem != null) {
       setState(() => _error = problem);
@@ -368,7 +367,7 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
           widget.requireCurrentPassword ? _currentPassword.text : null);
       if (mounted) closeWith(true);
     } catch (error) {
-      if (mounted) setState(() => _error = _message(error));
+      if (mounted) setState(() => _error = ErrorMessages.present(error, 'Could not update your password. Please try again.'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

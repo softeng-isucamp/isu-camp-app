@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -12,8 +13,8 @@ import '../services/profile_service.dart';
 
 const _green = Color(0xFF0F751B);
 
-String _message(Object error) =>
-    error.toString().replaceFirst('Exception: ', '');
+String _message(Object error) => ErrorMessages.present(
+    error, 'Could not update your account. Please try again.');
 
 void _snack(ScaffoldMessengerState messenger, String message, Color color) {
   messenger.showSnackBar(SnackBar(
@@ -160,7 +161,7 @@ class _ChangeEmailSheetState extends State<ChangeEmailSheet> {
       return 'Enter a valid email address.';
     }
     if (email.toLowerCase() == UserSession.currentEmail.toLowerCase()) {
-      return 'That is already your email.';
+      return 'Enter a different email address.';
     }
     return null;
   }

@@ -21,7 +21,7 @@ class NavigationHistoryService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(data['detail'] is String
           ? data['detail']
-          : 'History request failed.');
+          : 'Could not load your history. Please try again.');
     }
     return data;
   }

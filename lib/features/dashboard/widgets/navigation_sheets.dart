@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1554,7 +1555,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
         _routes = routes;
         if (routes.isEmpty) {
           _error =
-              'No ${routeModeLabel(_selectedMode).toLowerCase()} route is available on permitted pathways.';
+              'No ${routeModeLabel(_selectedMode).toLowerCase()} route is available.';
         } else if (_selectedMode != TransportMode.walking) {
           _selectedRoute = RouteType.shortest;
         } else if (!routes.any((route) => route.type == _selectedRoute)) {
@@ -1566,7 +1567,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
       if (!mounted || requestVersion != _routeRequestVersion) return;
       setState(() {
         _loading = false;
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = ErrorMessages.present(error, 'Could not find a route. Please try again.');
       });
     }
   }

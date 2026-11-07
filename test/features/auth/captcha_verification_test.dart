@@ -10,6 +10,29 @@ import 'package:isu_camp_app/features/auth/widgets/captcha_surface.dart';
 import 'package:isu_camp_app/features/auth/widgets/captcha_verification.dart';
 
 void main() {
+  testWidgets('login lockout uses remaining header time instead of fixed server text', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+      await tester.enterText(find.byType(TextField).at(0), 'Demo');
+      await tester.enterText(find.byType(TextField).at(1), 'test-password');
+      await tester.tap(find.byType(OutlinedButton));
+      await tester.pumpAndSettle();
+      tester.widget<CaptchaSurface>(find.byType(CaptchaSurface))
+          .onMessage('{"type":"verified","token":"fixture-token"}');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Log in'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Try again in 01:'), findsWidgets);
+      expect(find.textContaining('5 minutes'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    }, () => MockClient((request) async => request.url.path == '/auth/login'
+        ? http.Response('{"detail":"Too many failed login attempts. Please try again in 5 minutes."}', 429,
+            headers: {'retry-after':'75', 'x-login-attempts':'6','x-login-attempts-remaining':'0'})
+        : http.Response('{"provider":"recaptcha-v2"}', 200)));
+  });
+
   testWidgets('verified popup closes and login sends its token exactly once',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 1200));
@@ -62,7 +85,7 @@ void main() {
       ));
       await tester.tap(find.byType(OutlinedButton));
       await tester.pumpAndSettle();
-      expect(find.textContaining('has not been set up yet'), findsOneWidget);
+      expect(find.textContaining('Human verification is unavailable.'), findsOneWidget);
       expect(find.textContaining('check your connection'), findsNothing);
       expect(token, isNull);
       expect(find.byType(Dialog), findsNothing);
@@ -85,7 +108,7 @@ void main() {
       await expectLater(
         CaptchaService.checkAvailability(parentOrigin: 'http://localhost:5173'),
         throwsA(isA<CaptchaException>().having(
-            (error) => error.message, 'message', contains('app address'))),
+            (error) => error.message, 'message', contains('unavailable here'))),
       );
       expect(requestedUrl!.queryParameters['parent_origin'],
           'http://localhost:5173');
@@ -103,7 +126,7 @@ void main() {
     for (final entry in [
       (
         http.Response('{"detail":"Not Found"}', 404),
-        'not available on this server yet'
+        'Human verification is unavailable.'
       ),
       (
         http.Response('<html>Bad Gateway</html>', 502),

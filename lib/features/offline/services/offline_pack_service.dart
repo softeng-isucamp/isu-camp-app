@@ -241,8 +241,8 @@ class OfflinePackService extends ChangeNotifier {
           message: error is _DownloadFailure
               ? error.message
               : error is FormatException
-                  ? 'The server has not published a valid precomputed offline pack yet. Try again later.'
-                  : 'Could not load the published offline map. Check your connection and try again.'));
+                  ? 'The offline map is not available yet. Try again later.'
+                  : 'Could not load the offline map. Check your connection and try again.'));
       return;
     }
     // The denominator is available before any file request or disk validation.
@@ -305,7 +305,7 @@ class OfflinePackService extends ChangeNotifier {
       final bundle = await _readJson(manifest.cachePath(bundleFile));
       if (bundle == null || bundle['version'] != manifest.version) {
         throw const _DownloadFailure(
-            'The published campus data is invalid. Try again later.');
+            'The offline map could not be prepared. Try again later.');
       }
       _manifest = manifest;
       _adoptBundle(bundle);
@@ -360,7 +360,7 @@ class OfflinePackService extends ChangeNotifier {
           ? null
           : _pauseRequested
               ? 'Paused. Resume to finish downloading the offline map.'
-              : 'Stopped after a connection or file verification problem. Resume to try again.',
+              : 'The download stopped. Select Resume to try again.',
       clearMessage: complete,
     ));
     _pauseRequested = false;

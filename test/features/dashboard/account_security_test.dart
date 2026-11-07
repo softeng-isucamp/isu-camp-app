@@ -144,7 +144,7 @@ void main() {
       await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
       await tester.tap(find.text('Update Password'));
       await tester.pumpAndSettle();
-      expect(find.text('Please enter your current password.'), findsOneWidget);
+      expect(find.text('Enter your current password.'), findsOneWidget);
       expect(saves, 0);
       await tester.enterText(find.byType(TextField).first, 'WrongPass1!');
       await tester.pump();
@@ -254,12 +254,12 @@ void main() {
       await tester.enterText(input, 'KARL@example.com');
       await tester.tap(find.text('Send Code'));
       await tester.pumpAndSettle();
-      expect(find.text('That is already your email.'), findsOneWidget);
+      expect(find.text('Enter a different email address.'), findsOneWidget);
       expect(requestedEmail, isNull);
 
       await tester.enterText(input, '');
       await tester.pumpAndSettle();
-      expect(find.text('That is already your email.'), findsNothing);
+      expect(find.text('Enter a different email address.'), findsNothing);
       expect(requestedEmail, isNull);
 
       await tester.enterText(input, 'new@example.com');
@@ -271,7 +271,7 @@ void main() {
       final code = find.byKey(const ValueKey('otp_code_input'));
       await tester.enterText(code, '111111');
       await tester.pumpAndSettle();
-      expect(find.text('Invalid OTP. 4 attempt(s) remaining.'), findsOneWidget);
+      expect(find.text('That code is incorrect. 4 attempts remaining.'), findsOneWidget);
       expect(UserSession.currentEmail, 'karl@example.com');
 
       await tester.enterText(code, '123456');

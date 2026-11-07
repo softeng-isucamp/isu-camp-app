@@ -209,7 +209,7 @@ void main() {
           onViewRoute: (_, __) => fail('No route must not navigate'),
         ))));
         await tester.pump();
-        expect(find.text('No walking route'), findsOneWidget);
+        expect(find.text('Could not find a route. Please try again.'), findsOneWidget);
         expect(
             tester
                 .widget<ElevatedButton>(
