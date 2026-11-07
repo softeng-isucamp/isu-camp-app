@@ -50,4 +50,58 @@ class ProfileService {
             body: jsonEncode({'username': username.trim()}),
           )
           .timeout(const Duration(seconds: 15)));
+
+  // Account changes: codes are emailed and the account comes from the session.
+
+  static Future<Map<String, dynamic>> _post(
+      String path, Map<String, dynamic>? body, String fallback,
+      {bool codeStep = false}) async {
+    final response = await http
+        .post(
+          Uri.parse('${AuthService.baseUrl}/profile$path'),
+          headers: _headers(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    dynamic data;
+    try {
+      data = jsonDecode(response.body);
+    } catch (_) {
+      data = null;
+    }
+    if (response.statusCode == 200 && data is Map<String, dynamic>) return data;
+    if (codeStep) throw AuthService.otpException(response, data, fallback);
+    throw ProfileException(AuthService.errorMessage(data, fallback));
+  }
+
+  /// Emails a code to the account's address and returns it partly hidden.
+  static Future<String> requestPasswordChangeCode() async =>
+      (await _post('/password/request-otp', null,
+          'Could not send the verification code.',
+          codeStep: true))['sent_to'] as String? ??
+      'your email';
+
+  static Future<void> verifyPasswordChangeCode(int otp) =>
+      _post('/password/verify-otp', {'otp': otp}, 'Code verification failed.',
+          codeStep: true);
+
+  static Future<void> changePassword(String password, String confirm) => _post(
+      '/password',
+      {'password': password, 'confirm_password': confirm},
+      'Could not update your password.');
+
+  static Future<void> requestEmailChangeCode(String email) => _post(
+      '/email/request-otp',
+      {'email': email.trim()},
+      'Could not send the verification code.',
+      codeStep: true);
+
+  static Future<AccountProfile> confirmEmailChange(
+      String email, int otp) async {
+    final data = await _post('/email/verify-otp',
+        {'email': email.trim(), 'otp': otp}, 'Code verification failed.',
+        codeStep: true);
+    return AccountProfile(
+        username: data['username'] as String, email: data['email'] as String);
+  }
 }

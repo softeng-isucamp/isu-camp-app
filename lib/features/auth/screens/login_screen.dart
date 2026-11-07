@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../widgets/otp_code_input.dart';
 import '../widgets/sheet_controller_scope.dart';
 import '../widgets/captcha_verification.dart';
+import '../widgets/verification_sheets.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'get_started_screen.dart';
@@ -52,8 +52,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleForgotPasswordTimeout(VerificationTimeoutReason reason) {
+    // The open sheet closes itself; this only explains why.
     if (!mounted) return;
-    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     final message = switch (reason) {
       VerificationTimeoutReason.inactivity =>
         'Password reset closed because there was no activity.',
@@ -318,10 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                             Navigator.pop(sheetContext);
 
-                            _showVerifyCodeSheet(
-                              context,
-                              identifier,
-                            );
+                            _continuePasswordReset(identifier);
 
                             _showSnackBar(
                               'Verification code sent to your registered email.',
@@ -360,448 +357,42 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // =========================================================================
-  // POP-UP FLOW 2: Verify 6-Digit Code Sheet
+  // POP-UP FLOW 2 + 3: Verify the emailed code, then set a new password
   // =========================================================================
-  void _showVerifyCodeSheet(BuildContext context, String identifier) {
-    final codeController = TextEditingController();
-    bool verifying = false;
-    bool resending = false;
-    String? verificationError;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (sheetContext) =>
-          StatefulBuilder(builder: (sheetContext, updateSheet) {
-        Future<void> verify(String code) async {
-          if (verifying ||
-              resending ||
-              !_forgotSecurity.canVerify ||
-              code.length != 6) return;
-          updateSheet(() {
-            verifying = true;
-            verificationError = null;
-          });
-          try {
-            await AuthService.verifyForgotPasswordOtp(
-                identifier: identifier, otp: int.parse(code));
-            if (!mounted || !sheetContext.mounted || !_forgotSecurity.canVerify)
-              return;
-            _forgotSecurity.beginPasswordSetup();
-            Navigator.pop(sheetContext);
-            _showSetNewPasswordSheet(context, identifier);
-          } catch (error) {
-            if (!mounted || !sheetContext.mounted) return;
-            if (error is OtpException && error.isIncorrectCode) {
-              _forgotSecurity.recordIncorrectAttempt(
-                  serverRemaining: error.attemptsRemaining);
-              codeController.clear();
-            } else {
-              codeController.selection = TextSelection(
-                  baseOffset: 0, extentOffset: codeController.text.length);
-            }
-            updateSheet(() => verificationError =
-                AuthService.verificationErrorMessage(error));
-          } finally {
-            if (sheetContext.mounted) updateSheet(() => verifying = false);
-          }
-        }
-
-        return SheetControllerScope(
-            controllers: [codeController],
-            child: AnimatedBuilder(
-              animation: _forgotSecurity,
-              builder: (context, _) => SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(24, 24, 24,
-                        MediaQuery.of(sheetContext).viewInsets.bottom + 24),
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(
-                              child: Container(
-                                  width: 44,
-                                  height: 4,
-                                  margin: const EdgeInsets.only(bottom: 20),
-                                  decoration: BoxDecoration(
-                                      color: Colors.grey.shade300,
-                                      borderRadius: BorderRadius.circular(2)))),
-                          Text('Verify Code',
-                              style: GoogleFonts.merriweather(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF0F4D20))),
-                          const SizedBox(height: 8),
-                          Text(
-                              'Enter the 6-digit verification code sent to your registered email.',
-                              style: GoogleFonts.montserrat(
-                                  fontSize: 12.5, color: Colors.grey.shade700)),
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            Expanded(
-                                child: Text(
-                              _forgotSecurity.isVerificationLocked
-                                  ? 'Try again in ${_forgotSecurity.format(_forgotSecurity.verificationLockRemaining)}'
-                                  : 'Code expires in ${_forgotSecurity.format(_forgotSecurity.codeRemaining)} • ${_forgotSecurity.attemptsRemaining} attempts left',
-                              style: GoogleFonts.montserrat(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: _forgotSecurity.isVerificationLocked
-                                      ? Colors.redAccent
-                                      : Colors.grey.shade600),
-                            )),
-                            TextButton(
-                              onPressed: _forgotSecurity.canResend &&
-                                      !verifying &&
-                                      !resending
-                                  ? () async {
-                                      updateSheet(() {
-                                        resending = true;
-                                        verificationError = null;
-                                      });
-                                      try {
-                                        await AuthService
-                                            .requestForgotPasswordOtp(
-                                                identifier: identifier);
-                                        if (!mounted ||
-                                            !sheetContext.mounted ||
-                                            !_forgotSecurity.isOtpStage) return;
-                                        _forgotSecurity.recordResend();
-                                        codeController.clear();
-                                      } catch (error) {
-                                        if (sheetContext.mounted)
-                                          updateSheet(() => verificationError =
-                                              error.toString().replaceFirst(
-                                                  'Exception: ', ''));
-                                      } finally {
-                                        if (sheetContext.mounted)
-                                          updateSheet(() => resending = false);
-                                      }
-                                    }
-                                  : null,
-                              child: Text(resending
-                                  ? 'Sending…'
-                                  : _forgotSecurity.canResend
-                                      ? 'Resend'
-                                      : 'Resend ${_forgotSecurity.format(_forgotSecurity.resendRemaining)}'),
-                            ),
-                          ]),
-                          const SizedBox(height: 12),
-                          OtpCodeInput(
-                            controller: codeController,
-                            busy: verifying,
-                            enabled: _forgotSecurity.canVerify && !resending,
-                            error: verificationError,
-                            onActivity: () {
-                              _forgotSecurity.recordActivity();
-                              if (verificationError != null)
-                                updateSheet(() => verificationError = null);
-                            },
-                            onCompleted: verify,
-                          ),
-                        ]),
-                  )),
-            ));
-      }),
-    ).whenComplete(() {
-      if (_forgotSecurity.isOtpStage) _forgotSecurity.cancel();
-    });
-  }
-
-  void _showSetNewPasswordSheet(
-    BuildContext context,
-    String identifier,
-  ) {
-    final TextEditingController newPassController = TextEditingController();
-    final TextEditingController confirmPassController = TextEditingController();
-
-    bool isNewVisible = false;
-    bool isConfirmVisible = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return SheetControllerScope(
-            controllers: [newPassController, confirmPassController],
-            child: StatefulBuilder(
-              builder: (sheetContext, setSheetState) {
-                final text = newPassController.text;
-
-                final bool hasMinLength = text.length >= 8;
-                final bool hasMixedCase = text.contains(RegExp(r'[a-z]')) &&
-                    text.contains(RegExp(r'[A-Z]'));
-                final bool hasNumber = text.contains(RegExp(r'[0-9]'));
-                final bool hasSpecialChar = text.contains(
-                  RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\+=~/\\\[\]]'),
-                );
-
-                Widget buildRequirement(String label, bool met) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2.0),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: met ? const Color(0xFF0F751B) : Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          label,
-                          style: GoogleFonts.montserrat(
-                            fontSize: 11,
-                            color: met ? Colors.black87 : Colors.black54,
-                            fontWeight: met ? FontWeight.w600 : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(28)),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 44,
-                              height: 4,
-                              margin: const EdgeInsets.only(bottom: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade300,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            'Set New Password',
-                            style: GoogleFonts.merriweather(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF0F4D20),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          AnimatedBuilder(
-                            animation: _forgotSecurity,
-                            builder: (context, _) => Text(
-                              'Session expires in ${_forgotSecurity.format(_forgotSecurity.setupRemaining)}',
-                              style: GoogleFonts.montserrat(
-                                fontSize: 10.5,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'New Password',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: newPassController,
-                            obscureText: !isNewVisible,
-                            onChanged: (value) {
-                              _forgotSecurity.recordActivity();
-                              setSheetState(() {});
-                            },
-                            decoration: InputDecoration(
-                              hintText: 'Enter new password',
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  isNewVisible
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  size: 20,
-                                ),
-                                onPressed: () {
-                                  _forgotSecurity.recordActivity();
-                                  setSheetState(() {
-                                    isNewVisible = !isNewVisible;
-                                  });
-                                },
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          buildRequirement(
-                            'At least 8 characters',
-                            hasMinLength,
-                          ),
-                          buildRequirement(
-                            'Mixed case letters (upper & lower)',
-                            hasMixedCase,
-                          ),
-                          buildRequirement(
-                            'At least one number',
-                            hasNumber,
-                          ),
-                          buildRequirement(
-                            'At least one special character',
-                            hasSpecialChar,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Confirm Password',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: confirmPassController,
-                            obscureText: !isConfirmVisible,
-                            onChanged: (_) => _forgotSecurity.recordActivity(),
-                            decoration: InputDecoration(
-                              hintText: 'Re-enter new password',
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  isConfirmVisible
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  size: 20,
-                                ),
-                                onPressed: () {
-                                  _forgotSecurity.recordActivity();
-                                  setSheetState(() {
-                                    isConfirmVisible = !isConfirmVisible;
-                                  });
-                                },
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                final newPassword = newPassController.text;
-                                final confirmPassword =
-                                    confirmPassController.text;
-
-                                if (newPassword.isEmpty ||
-                                    confirmPassword.isEmpty) {
-                                  _showSnackBar(
-                                    'Please enter and confirm your new password.',
-                                    Colors.redAccent,
-                                  );
-                                  return;
-                                }
-
-                                if (newPassword != confirmPassword) {
-                                  _showSnackBar(
-                                    'Passwords do not match.',
-                                    Colors.redAccent,
-                                  );
-                                  return;
-                                }
-
-                                if (!hasMinLength ||
-                                    !hasMixedCase ||
-                                    !hasNumber ||
-                                    !hasSpecialChar) {
-                                  _showSnackBar(
-                                    'Please meet all password requirements.',
-                                    Colors.orangeAccent,
-                                  );
-                                  return;
-                                }
-
-                                try {
-                                  await AuthService.resetForgotPassword(
-                                    identifier: identifier,
-                                    password: newPassword,
-                                    confirmPassword: confirmPassword,
-                                  );
-
-                                  if (!mounted) return;
-
-                                  Navigator.pop(sheetContext);
-
-                                  _showSnackBar(
-                                    'Password updated successfully. You can now log in.',
-                                    const Color(0xFF0F751B),
-                                  );
-                                } catch (error) {
-                                  if (!mounted) return;
-
-                                  String message = error.toString();
-                                  message = message.replaceFirst(
-                                    'Exception: ',
-                                    '',
-                                  );
-
-                                  _showSnackBar(
-                                    message,
-                                    Colors.redAccent,
-                                  );
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0F751B),
-                              ),
-                              child: Text(
-                                'Update Password',
-                                style: GoogleFonts.montserrat(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ));
-      },
-    ).whenComplete(() {
+  Future<void> _continuePasswordReset(String identifier) async {
+    final verified = await VerifyCodeSheet.show(
+      context,
+      security: _forgotSecurity,
+      description:
+          'Enter the 6-digit verification code sent to your registered email.',
+      onVerify: (otp) =>
+          AuthService.verifyForgotPasswordOtp(identifier: identifier, otp: otp),
+      onResend: () =>
+          AuthService.requestForgotPasswordOtp(identifier: identifier),
+      onVerified: _forgotSecurity.beginPasswordSetup,
+    );
+    if (!mounted) return;
+    if (!verified) {
       _forgotSecurity.cancel();
-    });
+      return;
+    }
+    final updated = await SetNewPasswordSheet.show(
+      context,
+      security: _forgotSecurity,
+      onSubmit: (password, confirm) => AuthService.resetForgotPassword(
+        identifier: identifier,
+        password: password,
+        confirmPassword: confirm,
+      ),
+    );
+    // Stop the timers on every exit so no timeout fires after the flow ends.
+    _forgotSecurity.cancel();
+    if (updated && mounted) {
+      _showSnackBar(
+        'Password updated successfully. You can now log in.',
+        const Color(0xFF0F751B),
+      );
+    }
   }
 
   @override

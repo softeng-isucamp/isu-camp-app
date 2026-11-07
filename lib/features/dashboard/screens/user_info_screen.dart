@@ -12,6 +12,7 @@ import '../../offline/services/offline_pack_service.dart';
 import '../data/campus_dataset.dart';
 import '../models/navigation_history.dart';
 import '../services/navigation_history_service.dart';
+import '../widgets/account_security_flows.dart';
 import '../widgets/edit_profile_sheet.dart';
 import 'about_us_screen.dart';
 
@@ -31,6 +32,20 @@ class UserInfoScreen extends StatefulWidget {
 }
 
 class _UserInfoScreenState extends State<UserInfoScreen> {
+  bool _accountFlowRunning = false;
+
+  /// Runs one account flow at a time and refreshes the header afterwards.
+  Future<void> _runAccountFlow(
+      Future<void> Function(BuildContext context) flow) async {
+    if (_accountFlowRunning) return;
+    setState(() => _accountFlowRunning = true);
+    try {
+      await flow(context);
+    } finally {
+      if (mounted) setState(() => _accountFlowRunning = false);
+    }
+  }
+
   Future<void> _editProfile() async {
     await showModalBottomSheet<bool>(
       context: context,
@@ -40,7 +55,8 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (_) => const EditProfileSheet(),
+      builder: (_) => EditProfileSheet(
+          onChangeEmail: () => _runAccountFlow(startChangeEmailFlow)),
     );
     if (mounted) setState(() {});
   }
@@ -330,6 +346,46 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                       ),
                     ),
 
+                    // Card 3: Account security (logged-in users only)
+                    if (UserSession.accessToken != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            _buildMenuRow(
+                              icon: Icons.lock_outline,
+                              label: 'Change Password',
+                              onTap: () =>
+                                  _runAccountFlow(startChangePasswordFlow),
+                            ),
+                            const Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
+                            ),
+                            _buildMenuRow(
+                              icon: Icons.alternate_email,
+                              label: 'Change Email',
+                              onTap: () =>
+                                  _runAccountFlow(startChangeEmailFlow),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 32),
 
                     // 4. Log Out Outlined Button
@@ -403,8 +459,8 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
               'Update ready', const Color(0xFFB45309), const Color(0xFFFEF3C7));
         }
         if (status.state == OfflinePackState.downloading) {
-          return _offlineBadge('Downloading', const Color(0xFF1D4ED8),
-              const Color(0xFFDBEAFE));
+          return _offlineBadge(
+              'Downloading', const Color(0xFF1D4ED8), const Color(0xFFDBEAFE));
         }
         if (status.state == OfflinePackState.incomplete) {
           return _offlineBadge(

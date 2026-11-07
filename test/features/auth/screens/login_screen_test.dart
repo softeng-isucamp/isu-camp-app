@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:isu_camp_app/features/auth/screens/login_screen.dart';
 
 void main() {
@@ -48,5 +50,41 @@ void main() {
     expect(find.text('Request Reset Code'), findsOneWidget);
     expect(find.byType(BottomSheet), findsOneWidget);
     await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets(
+      'a finished reset stops its timers and never closes the login screen',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          home: Builder(
+              builder: (context) => TextButton(
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen())),
+                  child: const Text('open login')))));
+      await tester.tap(find.text('open login'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Forgot Password?'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Karl');
+      await tester.tap(find.text('Request Reset Code'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('otp_code_input')), '123456');
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(3), 'NewPass2@');
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      expect(find.text('Set New Password'), findsNothing);
+
+      await tester.pump(const Duration(minutes: 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.textContaining('no activity'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    }, () => MockClient((_) async => http.Response('{"success":true}', 200)));
   });
 }

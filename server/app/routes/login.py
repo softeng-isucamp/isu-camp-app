@@ -1,6 +1,4 @@
 # Login and password recovery endpoints, including failed-login lockout.
-import random
-import re
 import threading
 from datetime import datetime, timezone, timedelta
 
@@ -9,7 +7,9 @@ from pydantic import BaseModel
 from pwdlib import PasswordHash
 
 from app.database.supabase import supabase
-from app.utils.email import send_otp_email
+from app.utils.email import mask_email
+from app.utils.passwords import ensure_different_password, validate_new_password
+from app.utils.pending_otp import delete_pending, issue_code, require_verified, verify_code
 from app.utils.session import issue_session
 from app.utils.captcha import verify_captcha
 
@@ -346,79 +346,17 @@ def get_user_by_identifier(identifier: str):
 # FORGOT PASSWORD - REQUEST OTP
 # ============================================================
 
-# This block creates a recovery OTP and attempts to remove the pending record if saving or sending fails.
+# This block emails a rate-limited recovery code to the account's registered address.
 @router.post("/forgot-password/request-otp")
 def forgot_password_request_otp(
     data: ForgotPasswordRequest
 ):
-
-    user = get_user_by_identifier(
-        data.identifier
-    )
-
-    email = user["email"]
-    username = user["username"]
-
-    otp = random.randint(
-        100000,
-        999999
-    )
-
-    expires_at = (
-        datetime.now(timezone.utc)
-        + timedelta(minutes=5)
-    )
-
-    try:
-        # ======================================
-        # SAVE OTP TO pending_verification
-        # ======================================
-
-        supabase.table(
-            "pending_verification"
-        ).upsert(
-            {
-                "email": email,
-                "username": username,
-                "otp": otp,
-                "otp_expires_at": expires_at.isoformat(),
-                "otp_attempts": 0,
-                "email_verified": False
-            },
-            on_conflict="email"
-        ).execute()
-
-        # ======================================
-        # SEND EMAIL
-        # ======================================
-
-        send_otp_email(
-            email,
-            str(otp)
-        )
-
-    except Exception as e:
-
-        # Remove OTP if email sending failed
-        try:
-            (
-                supabase
-                .table("pending_verification")
-                .delete()
-                .eq("email", email)
-                .execute()
-            )
-        except Exception:
-            pass
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to send OTP: {str(e)}"
-        )
-
+    user = get_user_by_identifier(data.identifier)
+    issue_code(user["email"], user["username"], "password_reset", user["email"])
     return {
         "success": True,
-        "message": "Password reset OTP sent successfully."
+        "message": "Password reset OTP sent successfully.",
+        "sent_to": mask_email(user["email"]),
     }
 
 
@@ -431,132 +369,8 @@ def forgot_password_request_otp(
 def forgot_password_verify_otp(
     data: VerifyForgotPasswordOTP
 ):
-
-    user = get_user_by_identifier(
-        data.identifier
-    )
-
-    email = user["email"]
-
-    result = (
-        supabase
-        .table("pending_verification")
-        .select("*")
-        .eq("email", email)
-        .execute()
-    )
-
-    if not result.data:
-        raise HTTPException(
-            status_code=404,
-            detail="No verification request found. Please request a new OTP."
-        )
-
-    verification = result.data[0]
-
-    # ======================================
-    # CHECK ATTEMPTS
-    # ======================================
-
-    attempts = (
-        verification.get("otp_attempts")
-        or 0
-    )
-
-    if attempts >= 5:
-
-        (
-            supabase
-            .table("pending_verification")
-            .delete()
-            .eq("email", email)
-            .execute()
-        )
-
-        raise HTTPException(
-            status_code=400,
-            detail="Too many incorrect attempts. Please request a new OTP."
-        )
-
-    # ======================================
-    # CHECK OTP EXPIRATION
-    # ======================================
-
-    expiry_string = verification.get(
-        "otp_expires_at"
-    )
-
-    if not expiry_string:
-        raise HTTPException(
-            status_code=400,
-            detail="OTP expiration information is missing."
-        )
-
-    expiry = datetime.fromisoformat(
-        expiry_string.replace(
-            "Z",
-            "+00:00"
-        )
-    )
-
-    if datetime.now(timezone.utc) > expiry:
-
-        (
-            supabase
-            .table("pending_verification")
-            .delete()
-            .eq("email", email)
-            .execute()
-        )
-
-        raise HTTPException(
-            status_code=400,
-            detail="OTP expired. Please request a new OTP."
-        )
-
-    # ======================================
-    # VERIFY OTP
-    # ======================================
-
-    if int(verification["otp"]) != data.otp:
-
-        attempts += 1
-
-        (
-            supabase
-            .table("pending_verification")
-            .update(
-                {
-                    "otp_attempts": attempts
-                }
-            )
-            .eq("email", email)
-            .execute()
-        )
-
-        remaining = 5 - attempts
-
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid OTP. {remaining} attempt(s) remaining."
-        )
-
-    # ======================================
-    # MARK OTP AS VERIFIED
-    # ======================================
-
-    (
-        supabase
-        .table("pending_verification")
-        .update(
-            {
-                "email_verified": True
-            }
-        )
-        .eq("email", email)
-        .execute()
-    )
-
+    user = get_user_by_identifier(data.identifier)
+    verify_code(user["email"], user["username"], data.otp, "password_reset", user["email"])
     return {
         "success": True,
         "message": "OTP verified successfully."
@@ -567,185 +381,39 @@ def forgot_password_verify_otp(
 # FORGOT PASSWORD - RESET PASSWORD
 # ============================================================
 
-# This block requires a verified OTP and rechecks its expiration when present before replacing the password hash.
+# This block requires a verified, unexpired OTP before replacing the password hash.
 @router.post("/forgot-password/reset-password")
 def forgot_password_reset_password(
     data: ResetPasswordRequest
 ):
-
-    user = get_user_by_identifier(
-        data.identifier
-    )
-
+    user = get_user_by_identifier(data.identifier)
     email = user["email"]
+    require_verified(email, user["username"])
+    validate_new_password(data.password, data.confirm_password)
 
-    # ======================================
-    # GET OTP VERIFICATION RECORD
-    # ======================================
-
-    result = (
+    current = (
         supabase
-        .table("pending_verification")
-        .select("*")
-        .eq("email", email)
+        .table("userInfo")
+        .select("password")
+        .eq("id", user["info_id"])
         .execute()
     )
-
-    if not result.data:
-        raise HTTPException(
-            status_code=404,
-            detail="No verification request found."
-        )
-
-    verification = result.data[0]
-
-    # ======================================
-    # CHECK IF OTP WAS VERIFIED
-    # ======================================
-
-    if not verification.get(
-        "email_verified",
-        False
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Please verify your OTP first."
-        )
-
-    # ======================================
-    # CHECK OTP EXPIRATION AGAIN
-    # ======================================
-
-    expiry_string = verification.get(
-        "otp_expires_at"
-    )
-
-    if expiry_string:
-
-        expiry = datetime.fromisoformat(
-            expiry_string.replace(
-                "Z",
-                "+00:00"
-            )
-        )
-
-        if datetime.now(timezone.utc) > expiry:
-
-            (
-                supabase
-                .table("pending_verification")
-                .delete()
-                .eq("email", email)
-                .execute()
-            )
-
-            raise HTTPException(
-                status_code=400,
-                detail="Verification expired. Please request a new OTP."
-            )
-
-    # ======================================
-    # PASSWORDS MUST MATCH
-    # ======================================
-
-    if data.password != data.confirm_password:
-        raise HTTPException(
-            status_code=400,
-            detail="Passwords do not match."
-        )
-
-    # ======================================
-    # PASSWORD VALIDATION
-    # ======================================
-
-    if len(data.password) < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters."
-        )
-
-    if not re.search(
-        r"[A-Z]",
-        data.password
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one uppercase letter."
-        )
-
-    if not re.search(
-        r"[a-z]",
-        data.password
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one lowercase letter."
-        )
-
-    if not re.search(
-        r"[0-9]",
-        data.password
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one number."
-        )
-
-    if not re.search(
-        r'[^A-Za-z0-9]',
-        data.password
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one special character."
-        )
-
-    # ======================================
-    # HASH NEW PASSWORD
-    # ======================================
-
-    hashed_password = password_hash.hash(
-        data.password
-    )
-
-    # ======================================
-    # UPDATE USER PASSWORD
-    # ======================================
+    ensure_different_password(data.password, current.data[0].get("password") if current.data else None)
 
     update_result = (
         supabase
         .table("userInfo")
-        .update(
-            {
-                "password": hashed_password
-            }
-        )
-        .eq("email", email)
+        .update({"password": password_hash.hash(data.password)})
+        .eq("id", user["info_id"])
         .execute()
     )
-
     if not update_result.data:
         raise HTTPException(
             status_code=500,
             detail="Failed to update password."
         )
 
-    # ======================================
-    # DELETE TEMPORARY VERIFICATION
-    # ======================================
-
-    (
-        supabase
-        .table("pending_verification")
-        .delete()
-        .eq("email", email)
-        .execute()
-    )
-
-    # ======================================
-    # SUCCESS
-    # ======================================
-
+    delete_pending(email)
     return {
         "success": True,
         "message": "Password reset successfully."

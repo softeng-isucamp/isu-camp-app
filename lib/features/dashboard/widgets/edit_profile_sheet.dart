@@ -4,7 +4,11 @@ import '../../auth/services/user_session.dart';
 import '../services/profile_service.dart';
 
 class EditProfileSheet extends StatefulWidget {
-  const EditProfileSheet({super.key});
+  const EditProfileSheet({super.key, this.onChangeEmail});
+
+  /// Runs after this sheet closes when the user taps "Change" on the email.
+  final VoidCallback? onChangeEmail;
+
   @override
   State<EditProfileSheet> createState() => _EditProfileSheetState();
 }
@@ -146,10 +150,21 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                         TextFormField(
                             initialValue: _email,
                             readOnly: true,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                                 labelText: 'Email',
-                                suffixIcon: Icon(Icons.lock_outline),
-                                border: OutlineInputBorder())),
+                                suffixIcon: widget.onChangeEmail == null
+                                    ? const Icon(Icons.lock_outline)
+                                    : TextButton(
+                                        key: const ValueKey(
+                                            'profile_change_email'),
+                                        onPressed: _saving
+                                            ? null
+                                            : () {
+                                                Navigator.pop(context);
+                                                widget.onChangeEmail!();
+                                              },
+                                        child: const Text('Change')),
+                                border: const OutlineInputBorder())),
                         if (_error != null)
                           Padding(
                               padding: const EdgeInsets.only(top: 12),
