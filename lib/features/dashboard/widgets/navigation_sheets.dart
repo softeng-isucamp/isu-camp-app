@@ -302,6 +302,399 @@ class RouteMetricsHelper {
 }
 
 // =========================================================================
+// 0. SEARCH RESULTS DRAGGABLE MODAL SHEET
+// =========================================================================
+class SearchResultItem {
+  final CampusBuilding building;
+  final CampusRoom? room;
+  final bool isRelated;
+
+  const SearchResultItem({
+    required this.building,
+    this.room,
+    this.isRelated = false,
+  });
+
+  String get title => room?.title ?? building.name;
+
+  String get subtitle =>
+      room != null ? '${building.name} • ${room!.floor}' : building.category;
+
+  String get description {
+    if (room != null) {
+      final desc = (room!.description ?? '').trim();
+      return desc.isNotEmpty
+          ? desc
+          : 'Located inside ${building.name} (${room!.floor})';
+    }
+    return building.description;
+  }
+
+  String? get imageUrl => room != null ? room!.imageUrl : building.imageUrl;
+}
+
+class SearchResultsSheet extends StatefulWidget {
+  final String query;
+  final List<SearchResultItem> results;
+  final ValueChanged<SearchResultItem> onResultTap;
+  final ValueChanged<SearchResultItem> onDirectionsTap;
+  final VoidCallback? onClose;
+
+  const SearchResultsSheet({
+    super.key,
+    required this.query,
+    required this.results,
+    required this.onResultTap,
+    required this.onDirectionsTap,
+    this.onClose,
+  });
+
+  @override
+  State<SearchResultsSheet> createState() => _SearchResultsSheetState();
+}
+
+class _SearchResultsSheetState extends State<SearchResultsSheet> {
+  static const double _minSheetSize = 0.16;
+  static const double _initialSheetSize = 0.58;
+  static const double _maxSheetSize = 0.88;
+
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+
+  @override
+  void didUpdateWidget(covariant SearchResultsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.query != widget.query && _sheetController.isAttached) {
+      _sheetController.animateTo(
+        _initialSheetSize,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _sheetController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSheetPosition() {
+    if (!_sheetController.isAttached) return;
+    final currentSize = _sheetController.size;
+    final targetSize = currentSize <= (_minSheetSize + 0.08)
+        ? _initialSheetSize
+        : _minSheetSize;
+    _sheetController.animateTo(
+      targetSize,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleHeaderVerticalDragUpdate(
+    DragUpdateDetails details,
+    double maxHeight,
+  ) {
+    if (!_sheetController.isAttached || maxHeight <= 0) return;
+    final delta = (details.primaryDelta ?? 0) / maxHeight;
+    final nextSize =
+        (_sheetController.size - delta).clamp(_minSheetSize, _maxSheetSize);
+    _sheetController.jumpTo(nextSize);
+  }
+
+  void _handleHeaderVerticalDragEnd(DragEndDetails details) {
+    if (!_sheetController.isAttached) return;
+    final velocity = details.primaryVelocity ?? 0;
+    final current = _sheetController.size;
+    const snaps = [_minSheetSize, _initialSheetSize, _maxSheetSize];
+
+    double target;
+    if (velocity < -350) {
+      target =
+          snaps.firstWhere((s) => s > current, orElse: () => _maxSheetSize);
+    } else if (velocity > 350) {
+      target =
+          snaps.lastWhere((s) => s < current, orElse: () => _minSheetSize);
+    } else {
+      target = snaps.reduce(
+        (a, b) => (a - current).abs() < (b - current).abs() ? a : b,
+      );
+    }
+
+    _sheetController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: screenHeight),
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+            PointerDeviceKind.stylus,
+          },
+        ),
+        child: DraggableScrollableSheet(
+          controller: _sheetController,
+          expand: false,
+          initialChildSize: _initialSheetSize,
+          minChildSize: _minSheetSize,
+          maxChildSize: _maxSheetSize,
+          snap: true,
+          snapSizes: const [_minSheetSize, _initialSheetSize, _maxSheetSize],
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 20,
+                    offset: Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Sticky Draggable Header (Drag Handle & Top Header Row)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _toggleSheetPosition,
+                    onVerticalDragUpdate: (details) =>
+                        _handleHeaderVerticalDragUpdate(details, screenHeight),
+                    onVerticalDragEnd: _handleHeaderVerticalDragEnd,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 44,
+                              height: 5,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade400,
+                                borderRadius: BorderRadius.circular(2.5),
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'SEARCH RESULTS (${widget.results.length})',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade600,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              if (widget.onClose != null)
+                                GestureDetector(
+                                  onTap: widget.onClose,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 18,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Scrollable Results List Linked to DraggableScrollableSheet
+                  Expanded(
+                    child: widget.results.isEmpty
+                        ? SingleChildScrollView(
+                            controller: scrollController,
+                            physics: const ClampingScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.search_off_rounded,
+                                    size: 46,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No results found for "${widget.query}"',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF0F4D20),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Try searching for another building, office, room, or parking area.',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollController,
+                            physics: const ClampingScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                            itemCount: widget.results.length,
+                            separatorBuilder: (_, __) => const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Divider(height: 1),
+                            ),
+                            itemBuilder: (context, index) {
+                              final item = widget.results[index];
+                              return GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => widget.onResultTap(item),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Location Image with rounded corners
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Container(
+                                        height: 160,
+                                        width: double.infinity,
+                                        color: Colors.grey.shade200,
+                                        child: LocationPhoto(
+                                          imageUrl: item.imageUrl,
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 14),
+
+                                    // Title & Subtitle + Green "DIRECTIONS" Button Row
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.title,
+                                                style: GoogleFonts.montserrat(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w800,
+                                                  color:
+                                                      const Color(0xFF0F4D20),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                item.subtitle,
+                                                style: GoogleFonts.montserrat(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade600,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        ElevatedButton.icon(
+                                          onPressed: () =>
+                                              widget.onDirectionsTap(item),
+                                          icon: const Icon(
+                                            Icons.directions,
+                                            size: 16,
+                                            color: Colors.white,
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF0F5A28),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 11,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            elevation: 2,
+                                          ),
+                                          label: Text(
+                                            'DIRECTIONS',
+                                            style: GoogleFonts.montserrat(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+
+                                    if (item.description.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        item.description,
+                                        style: GoogleFonts.montserrat(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
 // 1. BUILDING DETAILS MODAL SHEET (Design Mockup Image 5)
 // =========================================================================
 class BuildingDetailsSheet extends StatefulWidget {

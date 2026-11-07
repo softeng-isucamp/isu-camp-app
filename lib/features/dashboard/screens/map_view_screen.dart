@@ -52,6 +52,7 @@ const List<LatLng> isuEchagueMockBoundary = [
 
 enum NavigationUiState {
   idle,
+  searchResults,
   buildingDetails,
   chooseRoute,
   routeDetails,
@@ -1258,14 +1259,161 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   List<CampusBuilding> _getFilteredBuildings() {
     final query = _searchController.text.trim();
-    final ids = query.isEmpty ? <String>{} : CampusSearch.search(
-        isuCampusBuildings, query, origin: _currentUserLocation)
-        .map((r) => r.building.id).toSet();
+    final ids = query.isEmpty
+        ? <String>{}
+        : _navigationState == NavigationUiState.searchResults
+            ? _getSubmittedSearchResults().map((r) => r.building.id).toSet()
+            : CampusSearch.search(
+                isuCampusBuildings,
+                query,
+                origin: _currentUserLocation,
+              ).map((r) => r.building.id).toSet();
     return isuCampusBuildings.where((b) {
       if (query.isNotEmpty && !ids.contains(b.id)) return false;
       if (!_matchesCategoryFilter(b, _selectedCategoryFilter)) return false;
       return true;
     }).toList();
+  }
+
+  List<SearchResultItem> _getSubmittedSearchResults([String? rawQuery]) {
+    final query = (rawQuery ?? _searchController.text).trim();
+    if (query.isEmpty) return const [];
+
+    final items = <SearchResultItem>[];
+    final seenKeys = <String>{};
+
+    void addItem(CampusBuilding building, {CampusRoom? room, bool isRelated = false}) {
+      if (!_matchesCategoryFilter(building, _selectedCategoryFilter)) return;
+      final key = room == null ? 'b:${building.id}' : 'r:${building.id}:${room.id}';
+      if (seenKeys.add(key)) {
+        items.add(SearchResultItem(
+          building: building,
+          room: room,
+          isRelated: isRelated,
+        ));
+      }
+    }
+
+    // 1. Direct matches from CampusSearch (sorted by relevance / distance)
+    final directMatches = CampusSearch.search(
+      isuCampusBuildings,
+      query,
+      origin: _currentUserLocation,
+    );
+    for (final match in directMatches) {
+      addItem(match.building, room: match.room, isRelated: false);
+    }
+
+    // Include all remaining direct matches not capped by origin limit
+    for (final match in CampusSearch.search(isuCampusBuildings, query)) {
+      addItem(match.building, room: match.room, isRelated: false);
+    }
+
+    // 2. Category-based matches if query maps to a known category
+    final inferredCategory = _categoryFromSearchQuery(query);
+    if (inferredCategory != null) {
+      for (final building in isuCampusBuildings) {
+        if (_matchesCategoryFilter(building, inferredCategory)) {
+          addItem(building, isRelated: true);
+        }
+      }
+    }
+
+    // 3. Related buildings and rooms matching normalized tokens / prefixes
+    final normalizedQuery = CampusSearch.normalize(query);
+    final queryTokens = normalizedQuery
+        .split(RegExp(r'\s+'))
+        .where((token) => token.length >= 2)
+        .toList();
+
+    if (queryTokens.isNotEmpty) {
+      for (final building in isuCampusBuildings) {
+        final bDoc = CampusSearch.normalize(
+          '${building.name} ${building.acronym} ${building.category} '
+          '${building.keywords} ${building.description}',
+        );
+        final buildingWords = bDoc.split(RegExp(r'\s+'));
+        final matchesBuilding = queryTokens.any(
+          (token) =>
+              bDoc.contains(token) ||
+              (token.length >= 3 &&
+                  buildingWords.any((w) => w.startsWith(token))),
+        );
+        if (matchesBuilding) {
+          addItem(building, isRelated: true);
+        }
+
+        for (final room in building.rooms) {
+          final rDoc = CampusSearch.normalize(
+            '${room.title} ${room.code} ${room.keywords} '
+            '${room.category.name} ${room.description ?? ''}',
+          );
+          final roomWords = rDoc.split(RegExp(r'\s+'));
+          final matchesRoom = queryTokens.any(
+            (token) =>
+                rDoc.contains(token) ||
+                (token.length >= 3 &&
+                    roomWords.any((w) => w.startsWith(token))),
+          );
+          if (matchesRoom) {
+            addItem(building, room: room, isRelated: true);
+          }
+        }
+      }
+    }
+
+    // 4. Related locations sharing name tokens or category with direct matches
+    if (items.isNotEmpty) {
+      final primaryBuildings =
+          items.where((i) => !i.isRelated).map((i) => i.building).toList();
+      const genericWords = {
+        'building',
+        'college',
+        'of',
+        'the',
+        'and',
+        'in',
+        'department',
+        'center',
+        'hall',
+        'main',
+        'new',
+        'old',
+        'isu',
+      };
+      final relatedWords = <String>{};
+      final relatedCategories = <String>{};
+      for (final b in primaryBuildings) {
+        if (b.category.trim().isNotEmpty) {
+          relatedCategories.add(b.category.trim().toLowerCase());
+        }
+        for (final w in CampusSearch.normalize('${b.name} ${b.acronym}')
+            .split(RegExp(r'\s+'))) {
+          if (w.length >= 3 && !genericWords.contains(w)) {
+            relatedWords.add(w);
+          }
+        }
+      }
+
+      if (relatedWords.isNotEmpty) {
+        for (final building in isuCampusBuildings) {
+          final bWords = CampusSearch.normalize(
+            '${building.name} ${building.acronym} ${building.keywords}',
+          ).split(RegExp(r'\s+')).toSet();
+          if (relatedWords.any(bWords.contains)) {
+            addItem(building, isRelated: true);
+          }
+        }
+      }
+
+      for (final building in isuCampusBuildings) {
+        if (relatedCategories.contains(building.category.trim().toLowerCase())) {
+          addItem(building, isRelated: true);
+        }
+      }
+    }
+
+    return items;
   }
 
   void _selectBuildingAndShowDetails(CampusBuilding building, {CampusRoom? room}) {
@@ -1369,13 +1517,22 @@ class _MapViewScreenState extends State<MapViewScreen> {
   void _handleSearchSubmitted(String query) {
     if (query.trim().isEmpty) return;
     _searchFocusNode.unfocus();
-    final results = _getSmartSearchResults();
-    if (results.length == 1) {
-      final result = results.first;
-      _openSearchLocation(result.building, room: result.matchedRooms.firstOrNull);
-    } else if (results.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('No location found matching "$query"')));
+    final results = _getSubmittedSearchResults(query);
+    setState(() {
+      _walkingRoute = null;
+      _historySessionId = null;
+      if (results.isNotEmpty) {
+        _selectedBuilding = results.first.building;
+        _selectedRoom = results.first.room;
+      }
+      _navigationState = NavigationUiState.searchResults;
+    });
+    if (results.isNotEmpty) {
+      final first = results.first;
+      _mapController.move(
+        first.room?.coordinate ?? first.building.coordinate,
+        17.2,
+      );
     }
   }
 
@@ -1832,7 +1989,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 ),
                 onTap: (_, __) {
                   _searchFocusNode.unfocus();
-                  if (_navigationState == NavigationUiState.buildingDetails) {
+                  if (_navigationState == NavigationUiState.buildingDetails ||
+                      _navigationState == NavigationUiState.searchResults) {
                     setState(() {
                       _navigationState = NavigationUiState.idle;
                     });
@@ -2468,10 +2626,14 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.search,
-                            color: Colors.white70,
-                            size: 20,
+                          GestureDetector(
+                            onTap: () =>
+                                _handleSearchSubmitted(_searchController.text),
+                            child: const Icon(
+                              Icons.search,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -2508,7 +2670,12 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               onTap: () {
                                 _searchController.clear();
                                 _searchFocusNode.unfocus();
-                                setState(() {});
+                                setState(() {
+                                  if (_navigationState ==
+                                      NavigationUiState.searchResults) {
+                                    _navigationState = NavigationUiState.idle;
+                                  }
+                                });
                               },
                               child: const Icon(
                                 Icons.close,
@@ -2588,6 +2755,65 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     ],
                   ),
                 ),
+              ),
+            ),
+
+          if (_navigationState == NavigationUiState.searchResults)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SearchResultsSheet(
+                query: _searchController.text.trim(),
+                results: _getSubmittedSearchResults(),
+                onClose: () {
+                  setState(() {
+                    _navigationState = NavigationUiState.idle;
+                  });
+                },
+                onResultTap: (item) async {
+                  if (item.room != null) {
+                    setState(() {
+                      _selectedBuilding = item.building;
+                      _selectedRoom = item.room;
+                    });
+                    _mapController.move(
+                      item.room!.coordinate ?? item.building.coordinate,
+                      18.0,
+                    );
+                    final navigate = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => IndoorLocationDetailsDialog(
+                        building: item.building,
+                        room: item.room,
+                      ),
+                    );
+                    if (navigate == true && mounted) {
+                      setState(() {
+                        _historySessionId = null;
+                        _selectedBuilding = item.building;
+                        _selectedRoom = item.room;
+                        _walkingRoute = null;
+                        _applyDefaultOrigin();
+                        _navigationState = NavigationUiState.chooseRoute;
+                      });
+                      _locateForDefaultOrigin();
+                    }
+                  } else {
+                    _selectBuildingAndShowDetails(item.building);
+                  }
+                },
+                onDirectionsTap: (item) {
+                  setState(() {
+                    _historySessionId = null;
+                    _selectedBuilding = item.building;
+                    _selectedRoom = item.room;
+                    _walkingRoute = null;
+                    _applyDefaultOrigin();
+                    _navigationState = NavigationUiState.chooseRoute;
+                  });
+                  _locateForDefaultOrigin();
+                },
               ),
             ),
 
