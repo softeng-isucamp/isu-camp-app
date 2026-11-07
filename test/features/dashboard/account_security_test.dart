@@ -193,6 +193,11 @@ void main() {
       expect(find.text('That is already your email.'), findsOneWidget);
       expect(requestedEmail, isNull);
 
+      await tester.enterText(input, '');
+      await tester.pumpAndSettle();
+      expect(find.text('That is already your email.'), findsNothing);
+      expect(requestedEmail, isNull);
+
       await tester.enterText(input, 'new@example.com');
       await tester.tap(find.text('Send Code'));
       await tester.pumpAndSettle();

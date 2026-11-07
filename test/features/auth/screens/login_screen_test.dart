@@ -39,6 +39,32 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
+  testWidgets('reset request errors stay inside the sheet and clear on edit',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const message = 'Please wait before requesting another code.';
+    await http.runWithClient(() async {
+      await tester.pumpWidget(buildSubject());
+      await tester.tap(find.text('Forgot Password?'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Karl');
+      await tester.tap(find.text('Request Reset Code'));
+      await tester.pumpAndSettle();
+      expect(
+          find.descendant(
+              of: find.byType(BottomSheet), matching: find.text(message)),
+          findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      await tester.enterText(find.byType(TextField).last, 'Other');
+      await tester.pump();
+      expect(find.text(message), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient(
+            (_) async => http.Response('{"detail":"$message"}', 429)));
+  });
+
   testWidgets('forgot password keeps the original bottom-sheet design',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 1200));

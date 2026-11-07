@@ -143,6 +143,7 @@ class _ChangeEmailSheetState extends State<ChangeEmailSheet> {
   final _email = TextEditingController();
   final _form = GlobalKey<FormState>();
   bool _sending = false;
+  bool _showValidation = false;
   String? _error;
 
   @override
@@ -163,7 +164,9 @@ class _ChangeEmailSheetState extends State<ChangeEmailSheet> {
   }
 
   Future<void> _send() async {
-    if (_sending || !_form.currentState!.validate()) return;
+    if (_sending) return;
+    _showValidation = true;
+    if (!_form.currentState!.validate()) return;
     final email = _email.text.trim();
     setState(() {
       _sending = true;
@@ -226,7 +229,13 @@ class _ChangeEmailSheetState extends State<ChangeEmailSheet> {
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8)),
                     ),
-                    validator: _validate,
+                    validator: (value) =>
+                        _showValidation ? _validate(value) : null,
+                    onChanged: (_) {
+                      _showValidation = false;
+                      _form.currentState!.validate();
+                      if (_error != null) setState(() => _error = null);
+                    },
                     onFieldSubmitted: (_) => _send(),
                   ),
                   if (_error != null)
