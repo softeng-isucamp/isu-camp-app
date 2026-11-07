@@ -221,7 +221,7 @@ void main() {
     await run(tester, () async {
       await openRouteDetails(tester);
       // Test Building is not a parking, so this filter would hide it.
-      await tester.tap(find.text('Parkings'));
+      await tester.tap(find.text('Parking'));
       await tester.pump();
       expect(find.byKey(const ValueKey('building-icon-2')), findsNothing);
       expectDestinationShown(tester, 'route details');
