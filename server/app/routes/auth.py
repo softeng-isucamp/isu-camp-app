@@ -1,3 +1,4 @@
+# Signup flow: request an OTP, verify the email, and create an account with a hashed password.
 import random
 import re
 from typing import Literal
@@ -24,11 +25,13 @@ password_hash = PasswordHash.recommended()
 # SIGN UP - REQUEST OTP
 # ==========================================
 
+# This block checks whether a username and a valid email address have been provided.
 class SignupRequest(BaseModel):
     username: str
     email: EmailStr
 
 
+# This block checks email/username availability, stores the OTP, and sends it by email.
 @router.post("/signup/request-otp")
 def request_otp(data: SignupRequest):
 
@@ -60,6 +63,7 @@ def request_otp(data: SignupRequest):
             detail="Username is already taken."
         )
 
+    # This block generates a six-digit OTP with a five-minute validity period.
     otp = random.randint(100000, 999999)
 
     expires_at = (
@@ -67,6 +71,7 @@ def request_otp(data: SignupRequest):
         + timedelta(minutes=5)
     )
 
+    # This block replaces pending verification for the same email and resets the attempt counter.
     supabase.table("pending_verification").upsert(
         {
             "email": data.email,
@@ -94,11 +99,13 @@ def request_otp(data: SignupRequest):
 # SIGN UP - VERIFY OTP
 # ==========================================
 
+# This block checks whether a valid email address and a numeric verification code have been provided.
 class VerifyOTPRequest(BaseModel):
     email: EmailStr
     otp: int
 
 
+# This block checks the attempt limit, expiration, and OTP before marking the email as verified.
 @router.post("/signup/verify-otp")
 def verify_otp(data: VerifyOTPRequest):
 
@@ -174,6 +181,7 @@ def verify_otp(data: VerifyOTPRequest):
 # SIGN UP - SET PASSWORD
 # ==========================================
 
+# This block checks whether an email, password, confirmation, and supported account type have been provided.
 class SetPasswordRequest(BaseModel):
     email: EmailStr
     password: str
@@ -181,11 +189,13 @@ class SetPasswordRequest(BaseModel):
     user_type: Literal["Student", "Staff", "Visitor"]
 
 
+# This block requires a verified signup, validates the password, and returns a session token.
 @router.post("/signup/set-password")
 def set_password(data: SetPasswordRequest):
+    # This block checks session configuration before writing a new account.
     session_secret()
 
-    # Find verified signup
+    # This block looks for the pending signup associated with the email address.
     result = (
         supabase
         .table("pending_verification")
@@ -202,59 +212,59 @@ def set_password(data: SetPasswordRequest):
 
     verification = result.data[0]
 
-    # Make sure email was verified
+    # This block validates whether the email address has been verified.
     if not verification["email_verified"]:
         raise HTTPException(
             status_code=400,
             detail="Email has not been verified."
         )
 
-    # Check password length
+    # This block validates whether the password contains at least eight characters.
     if len(data.password) < 8:
         raise HTTPException(
             status_code=400,
             detail="Password must be at least 8 characters long."
         )
 
-    # Check uppercase
+    # This block validates whether the password contains an uppercase letter.
     if not re.search(r"[A-Z]", data.password):
         raise HTTPException(
             status_code=400,
             detail="Password must contain an uppercase letter."
         )
 
-    # Check lowercase
+    # This block validates whether the password contains a lowercase letter.
     if not re.search(r"[a-z]", data.password):
         raise HTTPException(
             status_code=400,
             detail="Password must contain a lowercase letter."
         )
 
-    # Check number
+    # This block validates whether the password contains a number.
     if not re.search(r"\d", data.password):
         raise HTTPException(
             status_code=400,
             detail="Password must contain a number."
         )
 
-    # Check symbol
+    # This block validates whether the password contains a special character.
     if not re.search(r"[^A-Za-z0-9]", data.password):
         raise HTTPException(
             status_code=400,
             detail="Password must contain a symbol."
         )
 
-    # Check password confirmation
+    # This block validates whether the password and confirmation match.
     if data.password != data.confirm_password:
         raise HTTPException(
             status_code=400,
             detail="Passwords do not match."
         )
 
-    # Hash password
+    # This block hashes the password before saving it to the database.
     hashed_password = password_hash.hash(data.password)
 
-    # Create userInfo first
+    # This block saves the email address, hashed password, and account type.
     user_info = (
         supabase
         .table("userInfo")
@@ -276,7 +286,7 @@ def set_password(data: SetPasswordRequest):
 
     user_info_id = user_info.data[0]["id"]
 
-    # Create user
+    # This block creates the username record and links it to the saved account information.
     user = (
         supabase
         .table("user")
@@ -290,7 +300,7 @@ def set_password(data: SetPasswordRequest):
     )
 
     if not user.data:
-        # Remove userInfo if user creation failed
+        # This block removes the account information if creating the username record returned no result.
         supabase.table("userInfo").delete().eq(
             "id",
             user_info_id
@@ -301,7 +311,7 @@ def set_password(data: SetPasswordRequest):
             detail="Failed to create user account."
         )
 
-    # Delete temporary verification record
+    # This block removes the temporary verification record after the account is created.
     supabase.table("pending_verification").delete().eq(
         "email",
         data.email

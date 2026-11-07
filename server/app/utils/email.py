@@ -1,3 +1,4 @@
+# This block sends verification OTP emails through the configured SMTP server.
 import os
 import smtplib
 from email.message import EmailMessage
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# This block reads SMTP settings, builds the email, and sends it after authenticating with the mail server.
 def send_otp_email(recipient: str, otp: str):
     smtp_host = os.getenv("MAIL_SERVER", "smtp.gmail.com")
     smtp_port = int(os.getenv("MAIL_PORT", "587"))
@@ -41,6 +43,7 @@ ISU-CAMP Team
     )
 
     with smtplib.SMTP(smtp_host, smtp_port) as server:
+        # When enabled, upgrades the SMTP connection with STARTTLS before logging in.
         if use_tls:
             server.starttls()
         server.login(username, password)

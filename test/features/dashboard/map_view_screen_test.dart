@@ -109,7 +109,7 @@ void main() {
                   find.byKey(const ValueKey('route-origin-field')))
               .decoration!
               .hintText,
-          'Choose starting point');
+          'Your Location');
       expect(find.text('CHOOSE STARTING POINT'), findsNothing);
       expect(routeRequests, 0);
       expect(tester.takeException(), isNull);

@@ -76,6 +76,7 @@ def building_for_map(row, building_types=None):
         "acronym": row.get("building_code") or "",
         "category": classification,
         "description": row.get("description") or "",
+        "keywords": row.get("keywords") or "",
         "imageUrl": photo_for_map(row),
         "latitude": position[0],
         "longitude": position[1],

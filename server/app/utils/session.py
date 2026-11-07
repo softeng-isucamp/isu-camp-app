@@ -1,3 +1,4 @@
+# Session helpers: issue and validate signed JWTs for custom user accounts.
 """Signed sessions for the application's existing custom user table."""
 import os
 from datetime import datetime, timedelta, timezone
@@ -8,9 +9,11 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 load_dotenv()
+# This block lets current_user_id return a custom error when Bearer credentials are missing.
 bearer = HTTPBearer(auto_error=False)
 
 
+# This block requires a session secret of at least 32 characters before issuing or validating sessions.
 def session_secret():
     secret = os.getenv("SESSION_SECRET", "")
     if len(secret) < 32:
@@ -18,6 +21,7 @@ def session_secret():
     return secret
 
 
+# This block creates an HS256-signed JWT containing the user ID and a 24-hour expiration.
 def issue_session(user_id):
     now = datetime.now(timezone.utc)
     return jwt.encode({"sub": str(user_id), "iat": now,
@@ -26,6 +30,7 @@ def issue_session(user_id):
                       session_secret(), algorithm="HS256")
 
 
+# This block reads the Bearer token and verifies its signature, required claims, audience, issuer, and user ID.
 def current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     if credentials is None:
         raise HTTPException(401, "Please log in to access your history.")

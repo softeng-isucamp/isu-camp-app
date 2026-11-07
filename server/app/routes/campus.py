@@ -104,12 +104,12 @@ def campus_map_payload(request):
     """Buildings, rooms, and cover photo URLs exactly as the map consumes them."""
     building_rows = routing_rows(
         "building",
-        "building_id,building_name,building_code,type_id,description,latitude,longitude,polygon_coordinates",
+        "building_id,building_name,building_code,type_id,description,latitude,longitude,polygon_coordinates,keywords,status",
         "building_id",
     )
     location_rows = routing_rows(
         "location",
-        "location_id,building_id,floor_id,type_id,location_name,location_code,description",
+        "location_id,building_id,floor_id,type_id,location_name,location_code,description,keywords,latitude,longitude,status",
         "location_id",
     )
     floor_rows = routing_rows(
@@ -166,6 +166,8 @@ def campus_map_payload(request):
 
     rooms_by_building = {}
     for row in location_rows:
+        if row.get("status") == "inactive":
+            continue
         building_id = str(row["building_id"])
         floor = floors.get(str(row.get("floor_id")))
 
@@ -186,6 +188,10 @@ def campus_map_payload(request):
             "category": category,
             "imageUrl": location_photos.get(str(row["location_id"])),
             "description": row.get("description") or "",
+            "keywords": row.get("keywords") or "",
+            "code": row.get("location_code") or "",
+            "latitude": row.get("latitude"),
+            "longitude": row.get("longitude"),
             "floor": floor_label(
                 floor.get("floor_number") if floor else None
             ),
@@ -194,6 +200,8 @@ def campus_map_payload(request):
     buildings = []
     skipped = 0
     for row in building_rows:
+        if row.get("status") == "inactive":
+            continue
         building = building_for_map(row, building_types)
         if building is None:
             skipped += 1
