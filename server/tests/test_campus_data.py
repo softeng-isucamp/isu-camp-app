@@ -54,6 +54,25 @@ class CampusDataTests(unittest.TestCase):
         self.assertEqual(building["name"], "Infirmary")
         self.assertEqual(building["latitude"], 16.717874)
 
+    def test_category_and_parking_come_from_building_type(self):
+        types = {"2": "Campus Services", "3": "Parking"}
+        row = {"building_id": 5, "latitude": 16.7, "longitude": 121.6}
+        services = building_for_map({**row, "type_id": 2}, types)
+        self.assertEqual(services["category"], "Campus Services")
+        self.assertFalse(services["isParking"])
+        parking = building_for_map({**row, "type_id": 3}, types)
+        self.assertEqual(parking["category"], "Parking")
+        self.assertTrue(parking["isParking"])
+
+    def test_unknown_or_missing_type_falls_back_to_building(self):
+        types = {"2": "Campus Services"}
+        row = {"building_id": 5, "latitude": 16.7, "longitude": 121.6}
+        for type_id in (99, None):
+            building = building_for_map({**row, "type_id": type_id}, types)
+            self.assertEqual(building["category"], "Building")
+            self.assertFalse(building["isParking"])
+        self.assertEqual(building_for_map(row)["category"], "Building")
+
     def test_null_coordinates_use_polygon_without_duplicate_closing_point(self):
         building = building_for_map({
             "building_id": 1,

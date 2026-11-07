@@ -54,7 +54,8 @@ def coordinate(latitude, longitude):
     return [lat, lng] if -90 <= lat <= 90 and -180 <= lng <= 180 else None
 
 
-def building_for_map(row):
+def building_for_map(row, building_types=None):
+    """Map one building row; building_types maps str(type_id) to its type name."""
     # The admin table stores polygon points as [latitude, longitude].
     polygon = []
     for point in row.get("polygon_coordinates") or []:
@@ -68,7 +69,7 @@ def building_for_map(row):
         position = [sum(p[i] for p in vertices) / len(vertices) for i in (0, 1)]
     if position is None:
         return None
-    classification = row.get("classification") or "Building"
+    classification = (building_types or {}).get(str(row.get("type_id"))) or "Building"
     return {
         "id": str(row["building_id"]),
         "name": row.get("building_name") or "Unnamed building",
