@@ -2518,7 +2518,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               height: 28,
                               child: ClipOval(
                                 child: Image.asset(
-                                  'assets/images/logo_kumpas_app.png',
+                                  'assets/images/logo_kumpas_app.webp',
                                   fit: BoxFit.contain,
                                   errorBuilder: (context, error, stackTrace) =>
                                       const Icon(
@@ -2598,7 +2598,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               height: 36,
                               child: ClipOval(
                                 child: Image.asset(
-                                  'assets/images/logo_isu_png.png',
+                                  'assets/images/logo_isu.webp',
                                   fit: BoxFit.contain,
                                   errorBuilder: (context, error, stackTrace) =>
                                       const Icon(

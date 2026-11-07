@@ -67,7 +67,7 @@ void main() {
       var requests = 0;
       var failNextRoute = false;
       var elapsed = Duration.zero;
-      final tile = File('assets/images/logo_isu_png.png').readAsBytesSync();
+      final tile = File('assets/images/logo_isu.webp').readAsBytesSync();
       await http.runWithClient(() async {
         await tester.binding.setSurfaceSize(const Size(800, 1200));
         await tester.pumpWidget(MaterialApp(

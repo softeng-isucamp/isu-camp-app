@@ -36,7 +36,7 @@ class AboutUsScreen extends StatelessWidget {
             child: Opacity(
               opacity: 0.12,
               child: Image.asset(
-                'assets/images/Appdev_background1.png',
+                'assets/images/Appdev_background1.webp',
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => const SizedBox(),
               ),
@@ -59,7 +59,7 @@ class AboutUsScreen extends StatelessWidget {
                         color: Colors.white,
                       ),
                       child: Image.asset(
-                        'assets/images/Appdev_background1.png',
+                        'assets/images/Appdev_background1.webp',
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
                             Container(color: Colors.white),
@@ -144,7 +144,7 @@ class AboutUsScreen extends StatelessWidget {
                               ],
                             ),
                             child: Image.asset(
-                              'assets/images/logo_kumpas_app.png',
+                              'assets/images/logo_kumpas_app.webp',
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(

@@ -11,7 +11,7 @@ import 'package:isu_camp_app/features/dashboard/screens/map_view_screen.dart';
 void main() {
   testWidgets('controls remain after buildings finish loading', (tester) async {
     final response = Completer<http.Response>();
-    final tileBytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    final tileBytes = File('assets/images/logo_isu.webp').readAsBytesSync();
     await http.runWithClient(() async {
       await tester.binding.setSurfaceSize(const Size(1920, 1080));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -91,7 +91,7 @@ void main() {
 
   testWidgets('directions opens route panel without a separate origin step',
       (tester) async {
-    final tileBytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    final tileBytes = File('assets/images/logo_isu.webp').readAsBytesSync();
     var routeRequests = 0;
     await http.runWithClient(() async {
       await tester.binding.setSurfaceSize(const Size(430, 900));

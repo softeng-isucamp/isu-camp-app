@@ -13,7 +13,7 @@ void main() {
     testWidgets(
         '${indoor ? 'indoor' : 'building'} search opens location dialog and preserves destination',
         (tester) async {
-      final bytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+      final bytes = File('assets/images/logo_isu.webp').readAsBytesSync();
       await tester.binding.setSurfaceSize(const Size(1200, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await http.runWithClient(() async {
@@ -81,7 +81,7 @@ void main() {
   testWidgets(
       'submitting search via enter opens draggable SearchResultsSheet with matching and related results',
       (tester) async {
-    final bytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    final bytes = File('assets/images/logo_isu.webp').readAsBytesSync();
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await http.runWithClient(() async {
@@ -94,11 +94,13 @@ void main() {
 
       expect(find.byType(SearchResultsSheet), findsOneWidget);
       expect(find.textContaining('SEARCH RESULTS'), findsOneWidget);
-      expect(find.text('Administration Building'), findsOneWidget);
-      expect(find.text('Administration Parking'), findsOneWidget);
-      expect(find.text('DIRECTIONS'), findsWidgets);
+      Finder inSheet(Finder f) =>
+          find.descendant(of: find.byType(SearchResultsSheet), matching: f);
+      expect(inSheet(find.text('Administration Building')), findsOneWidget);
+      expect(inSheet(find.text('Administration Parking')), findsOneWidget);
+      expect(inSheet(find.text('DIRECTIONS')), findsWidgets);
 
-      await tester.tap(find.text('DIRECTIONS').first);
+      await tester.tap(inSheet(find.text('DIRECTIONS')).first);
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(ChooseRouteSheet), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());

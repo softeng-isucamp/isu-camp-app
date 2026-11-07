@@ -22,7 +22,7 @@ class DelayedGps extends TestGps {
 }
 
 void main() {
-  final tile = File('assets/images/logo_isu_png.png').readAsBytesSync();
+  final tile = File('assets/images/logo_isu.webp').readAsBytesSync();
 
   Future<void> run(
       WidgetTester tester,

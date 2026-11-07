@@ -98,7 +98,7 @@ class _GetStartedScreenState extends State<GetStartedScreen>
               width: double.infinity,
               height: double.infinity,
               child: Image.asset(
-                'assets/images/Appdev_background1.png',
+                'assets/images/Appdev_background1.webp',
                 fit: BoxFit.cover,
               ),
             ),
@@ -121,7 +121,7 @@ class _GetStartedScreenState extends State<GetStartedScreen>
                       height: logoDiameter,
                       child: ClipOval(
                         child: Image.asset(
-                          'assets/images/logo_kumpas_app.png',
+                          'assets/images/logo_kumpas_app.webp',
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
                             return const Icon(

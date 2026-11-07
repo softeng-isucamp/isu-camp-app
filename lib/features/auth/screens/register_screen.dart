@@ -1540,7 +1540,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   height: 34,
                                   child: ClipOval(
                                     child: Image.asset(
-                                      'assets/images/logo_kumpas_app.png',
+                                      'assets/images/logo_kumpas_app.webp',
                                       fit: BoxFit.contain,
                                       errorBuilder:
                                           (context, error, stackTrace) =>
@@ -1569,7 +1569,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                             height: 44,
                             child: ClipOval(
                               child: Image.asset(
-                                'assets/images/logo_isu_png.png',
+                                'assets/images/logo_isu.webp',
                                 fit: BoxFit.contain,
                                 errorBuilder: (context, error, stackTrace) =>
                                     const Icon(

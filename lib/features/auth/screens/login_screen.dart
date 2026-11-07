@@ -849,7 +849,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 34,
                             child: ClipOval(
                               child: Image.asset(
-                                'assets/images/logo_kumpas_app.png',
+                                'assets/images/logo_kumpas_app.webp',
                                 fit: BoxFit.contain,
                                 errorBuilder: (context, error, stackTrace) =>
                                     const Icon(Icons.navigation,
@@ -874,7 +874,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         height: 44,
                         child: ClipOval(
                           child: Image.asset(
-                            'assets/images/logo_isu_png.png',
+                            'assets/images/logo_isu.webp',
                             fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.school, color: Colors.white),

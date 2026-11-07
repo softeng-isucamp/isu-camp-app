@@ -15,7 +15,7 @@ import 'package:latlong2/latlong.dart';
 import 'live_navigation_test.dart' show TestGps;
 
 void main() {
-  final tile = File('assets/images/logo_isu_png.png').readAsBytesSync();
+  final tile = File('assets/images/logo_isu.webp').readAsBytesSync();
   const destinationYellow = Color(0xFFECC700);
 
   Future<void> run(WidgetTester tester, Future<void> Function() body) async {
