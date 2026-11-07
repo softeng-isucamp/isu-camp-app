@@ -56,7 +56,8 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (_) => EditProfileSheet(
-          onChangeEmail: () => _runAccountFlow(startChangeEmailFlow)),
+          onChangeEmail: () => _runAccountFlow(startChangeEmailFlow),
+          onChangePassword: () => _runAccountFlow(startChangePasswordFlow)),
     );
     if (mounted) setState(() {});
   }
@@ -345,46 +346,6 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                         ],
                       ),
                     ),
-
-                    // Card 3: Account security (logged-in users only)
-                    if (UserSession.accessToken != null) ...[
-                      const SizedBox(height: 14),
-                      Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            _buildMenuRow(
-                              icon: Icons.lock_outline,
-                              label: 'Change Password',
-                              onTap: () =>
-                                  _runAccountFlow(startChangePasswordFlow),
-                            ),
-                            const Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: Color(0xFFF1F5F9),
-                            ),
-                            _buildMenuRow(
-                              icon: Icons.alternate_email,
-                              label: 'Change Email',
-                              onTap: () =>
-                                  _runAccountFlow(startChangeEmailFlow),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
 
                     const SizedBox(height: 32),
 

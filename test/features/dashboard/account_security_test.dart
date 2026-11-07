@@ -25,11 +25,32 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('guests do not see account security options', (tester) async {
-    UserSession.logout();
-    await pumpScreen(tester);
-    expect(find.text('Change Password'), findsNothing);
-    expect(find.text('Change Email'), findsNothing);
+  Future<void> openFromEditProfile(WidgetTester tester, String key) async {
+    await tester.tap(find.byKey(const ValueKey('edit_profile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey(key)));
+    await tester.pumpAndSettle();
+  }
+
+  const profileJson = '{"username":"Karl","email":"karl@example.com"}';
+
+  testWidgets('account changes live in Edit Profile, not a separate card',
+      (tester) async {
+    UserSession.setLoggedInUser(username: 'Karl', token: 'signed-session');
+    addTearDown(UserSession.logout);
+    await http.runWithClient(() async {
+      await pumpScreen(tester);
+      expect(find.text('Change Password'), findsNothing);
+      expect(find.text('Change Email'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('edit_profile')));
+      await tester.pumpAndSettle();
+      expect(find.text('Password'), findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('profile_change_email')), findsOneWidget);
+      expect(find.byKey(const ValueKey('profile_change_password')),
+          findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    }, () => MockClient((_) async => http.Response(profileJson, 200)));
   });
 
   testWidgets(
@@ -42,8 +63,8 @@ void main() {
     Map<String, dynamic>? saved;
     await http.runWithClient(() async {
       await pumpScreen(tester);
-      await tester.tap(find.text('Change Password'));
-      await tester.pumpAndSettle();
+      await openFromEditProfile(tester, 'profile_change_password');
+      expect(find.text('Edit Profile'), findsNothing);
       expect(find.textContaining('sent to k***@example.com'), findsOneWidget);
 
       await tester.enterText(
@@ -52,7 +73,19 @@ void main() {
       expect(find.text('Set New Password'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField).at(0), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(1), 'Mismatch2@');
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      // Errors appear inside the sheet, where a snackbar would be hidden.
+      expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('set_password_error')))
+              .data,
+          'Passwords do not match.');
+      expect(calls, isNot(contains('/profile/password')));
       await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.pump();
+      expect(find.byKey(const ValueKey('set_password_error')), findsNothing);
       await tester.tap(find.text('Update Password'));
       await tester.pumpAndSettle();
 
@@ -69,6 +102,9 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
         () => MockClient((request) async {
+              if (request.method == 'GET') {
+                return http.Response(profileJson, 200);
+              }
               calls.add(
                   request.headers['Authorization'] == 'Bearer signed-session'
                       ? request.url.path
@@ -84,22 +120,53 @@ void main() {
             }));
   });
 
+  testWidgets('a rejected new password shows the server reason in the sheet',
+      (tester) async {
+    UserSession.setLoggedInUser(username: 'Karl', token: 'signed-session');
+    addTearDown(UserSession.logout);
+    const reason = 'New password must be different from your current password.';
+    await http.runWithClient(() async {
+      await pumpScreen(tester);
+      await openFromEditProfile(tester, 'profile_change_password');
+      await tester.enterText(
+          find.byKey(const ValueKey('otp_code_input')), '123456');
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      expect(find.text(reason), findsOneWidget);
+      expect(find.text('Set New Password'), findsOneWidget);
+      // Closing the sheet ends the flow and stops its timers.
+      Navigator.of(tester.element(find.text('Set New Password'))).pop();
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async => switch (request.url.path) {
+              '/profile' => http.Response(profileJson, 200),
+              '/profile/password' => http.Response('{"detail":"$reason"}', 400),
+              _ =>
+                http.Response('{"success":true,"sent_to":"k***@x.com"}', 200),
+            }));
+  });
+
   testWidgets('change password shows server errors without opening the code',
       (tester) async {
     UserSession.setLoggedInUser(username: 'Karl', token: 'signed-session');
     addTearDown(UserSession.logout);
     await http.runWithClient(() async {
       await pumpScreen(tester);
-      await tester.tap(find.text('Change Password'));
-      await tester.pumpAndSettle();
+      await openFromEditProfile(tester, 'profile_change_password');
       expect(find.byType(OtpCodeInput), findsNothing);
       expect(find.text('Please wait before requesting another code.'),
           findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
-        () => MockClient((_) async => http.Response(
-            '{"detail":"Please wait before requesting another code."}', 429,
-            headers: {'retry-after': '42'})));
+        () => MockClient((request) async => request.method == 'GET'
+            ? http.Response(profileJson, 200)
+            : http.Response(
+                '{"detail":"Please wait before requesting another code."}', 429,
+                headers: {'retry-after': '42'})));
   });
 
   testWidgets(
@@ -112,11 +179,8 @@ void main() {
     String? requestedEmail;
     await http.runWithClient(() async {
       await pumpScreen(tester);
-      await tester.tap(find.byKey(const ValueKey('edit_profile')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('profile_change_email')));
-      await tester.pumpAndSettle();
-      expect(find.text('Change Email'), findsWidgets);
+      await openFromEditProfile(tester, 'profile_change_email');
+      expect(find.text('Change Email'), findsOneWidget);
 
       final input = find.byKey(const ValueKey('change_email_input'));
       await tester.enterText(input, 'not-an-email');

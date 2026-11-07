@@ -39,13 +39,34 @@ VerificationSecurityController _security(ScaffoldMessengerState messenger) =>
 /// Code to the account email → verify → new password. The user stays logged in.
 Future<void> startChangePasswordFlow(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+  // Sending the email can take several seconds; show that something is happening.
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(children: [
+          SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5)),
+          SizedBox(width: 18),
+          Text('Sending code…'),
+        ]),
+      ),
+    ),
+  );
   final String sentTo;
   try {
     sentTo = await ProfileService.requestPasswordChangeCode();
   } catch (error) {
+    navigator.pop();
     _snack(messenger, _message(error), Colors.redAccent);
     return;
   }
+  navigator.pop();
   if (!context.mounted) return;
   final security = _security(messenger)..startOtpChallenge();
   try {

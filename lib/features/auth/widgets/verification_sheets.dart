@@ -16,12 +16,6 @@ const _darkGreen = Color(0xFF0F4D20);
 String _message(Object error) =>
     error.toString().replaceFirst('Exception: ', '');
 
-void _showSheetSnackBar(BuildContext context, String message, Color color) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message, style: GoogleFonts.montserrat()),
-      backgroundColor: color));
-}
-
 Widget _handle() => Center(
     child: Container(
         width: 44,
@@ -274,6 +268,9 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
   bool _confirmVisible = false;
   bool _saving = false;
 
+  /// Shown inside the sheet; a snackbar would be hidden behind it.
+  String? _error;
+
   @override
   VerificationSecurityController get security => widget.security;
 
@@ -337,28 +334,26 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     if (_saving) return;
     final password = _newPassword.text;
     final confirm = _confirmPassword.text;
-    if (password.isEmpty || confirm.isEmpty) {
-      _showSheetSnackBar(context, 'Please enter and confirm your new password.',
-          Colors.redAccent);
+    final problem = password.isEmpty || confirm.isEmpty
+        ? 'Please enter and confirm your new password.'
+        : password != confirm
+            ? 'Passwords do not match.'
+            : !meetsRules
+                ? 'Please meet all password requirements.'
+                : null;
+    if (problem != null) {
+      setState(() => _error = problem);
       return;
     }
-    if (password != confirm) {
-      _showSheetSnackBar(context, 'Passwords do not match.', Colors.redAccent);
-      return;
-    }
-    if (!meetsRules) {
-      _showSheetSnackBar(context, 'Please meet all password requirements.',
-          Colors.orangeAccent);
-      return;
-    }
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       await widget.onSubmit(password, confirm);
       if (mounted) closeWith(true);
     } catch (error) {
-      if (mounted) {
-        _showSheetSnackBar(context, _message(error), Colors.redAccent);
-      }
+      if (mounted) setState(() => _error = _message(error));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -410,7 +405,7 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
                 onToggle: () => setState(() => _newVisible = !_newVisible),
                 onChanged: (_) {
                   security.recordActivity();
-                  setState(() {});
+                  setState(() => _error = null);
                 },
               ),
               const SizedBox(height: 12),
@@ -427,8 +422,19 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
                 hint: 'Re-enter new password',
                 onToggle: () =>
                     setState(() => _confirmVisible = !_confirmVisible),
-                onChanged: (_) => security.recordActivity(),
+                onChanged: (_) {
+                  security.recordActivity();
+                  if (_error != null) setState(() => _error = null);
+                },
               ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(_error!,
+                      key: const ValueKey('set_password_error'),
+                      style: GoogleFonts.montserrat(
+                          fontSize: 12.5, color: Colors.redAccent)),
+                ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
