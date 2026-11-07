@@ -134,21 +134,50 @@ class AccountChangeTests(unittest.TestCase):
         self.assertEqual(self.sent[-1][0], 'karl@example.com')
         self.assertEqual(self.sent[-1][2], 'password_change')
 
-        self.assertEqual(self.post('/profile/password', {'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD}).status_code, 400)
+        self.assertEqual(self.post('/profile/password', {'current_password': OLD_PASSWORD, 'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD}).status_code, 400)
         self.assertEqual(self.post('/profile/password/verify-otp', {'otp': self.last_code()}).status_code, 200)
-        response = self.post('/profile/password', {'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD})
+        response = self.post('/profile/password', {'current_password': OLD_PASSWORD, 'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(self.password_matches(NEW_PASSWORD))
         self.assertIsNone(self.db.pending('karl@example.com'))
 
+    def test_password_change_requires_the_current_password_even_after_email_verification(self):
+        self.post('/profile/password/request-otp')
+        self.post('/profile/password/verify-otp', {'otp': self.last_code()})
+        body = {'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD}
+        self.assertEqual(self.post('/profile/password', body).status_code, 422)
+        for current in ('', 'WrongPass1!', OLD_PASSWORD + ' '):
+            response = self.post('/profile/password', dict(body, current_password=current))
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(response.json()['detail'], 'Current password is incorrect.')
+            self.assertTrue(self.password_matches(OLD_PASSWORD))
+            self.assertIsNotNone(self.db.pending('karl@example.com'))
+        response = self.post('/profile/password', dict(body, current_password=OLD_PASSWORD))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(self.password_matches(NEW_PASSWORD))
+
+    def test_incorrect_current_password_is_rate_limited(self):
+        self.post('/profile/password/request-otp')
+        self.post('/profile/password/verify-otp', {'otp': self.last_code()})
+        body = {'current_password': 'WrongPass1!', 'password': NEW_PASSWORD,
+                'confirm_password': NEW_PASSWORD}
+        for _ in range(4):
+            self.assertEqual(self.post('/profile/password', body).status_code, 400)
+        locked = self.post('/profile/password', body)
+        self.assertEqual(locked.status_code, 429)
+        self.assertIn('Retry-After', locked.headers)
+        body['current_password'] = OLD_PASSWORD
+        self.assertEqual(self.post('/profile/password', body).status_code, 429)
+        self.assertTrue(self.password_matches(OLD_PASSWORD))
+
     def test_password_change_rejects_same_and_weak_passwords(self):
         self.post('/profile/password/request-otp')
         self.post('/profile/password/verify-otp', {'otp': self.last_code()})
-        same = self.post('/profile/password', {'password': OLD_PASSWORD, 'confirm_password': OLD_PASSWORD})
+        same = self.post('/profile/password', {'current_password': OLD_PASSWORD, 'password': OLD_PASSWORD, 'confirm_password': OLD_PASSWORD})
         self.assertEqual(same.status_code, 400)
         self.assertIn('different', same.json()['detail'])
         for password, confirm in [('short1!A', 'short1!B'), ('alllower1!', 'alllower1!'), ('NoSpecial12', 'NoSpecial12')]:
-            self.assertEqual(self.post('/profile/password', {'password': password, 'confirm_password': confirm}).status_code, 400)
+            self.assertEqual(self.post('/profile/password', {'current_password': OLD_PASSWORD, 'password': password, 'confirm_password': confirm}).status_code, 400)
         self.assertTrue(self.password_matches(OLD_PASSWORD))
 
     def test_code_from_another_flow_is_not_accepted(self):
@@ -156,7 +185,7 @@ class AccountChangeTests(unittest.TestCase):
         self.db.tables['pending_verification'].append({
             'email': 'karl@example.com', 'username': 'someone', 'otp': 123456,
             'otp_expires_at': '2999-01-01T00:00:00+00:00', 'otp_attempts': 0, 'email_verified': True})
-        self.assertEqual(self.post('/profile/password', {'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD}).status_code, 404)
+        self.assertEqual(self.post('/profile/password', {'current_password': OLD_PASSWORD, 'password': NEW_PASSWORD, 'confirm_password': NEW_PASSWORD}).status_code, 404)
 
     # ---------------- rate limits ----------------
 

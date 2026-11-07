@@ -399,7 +399,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final updated = await SetNewPasswordSheet.show(
       context,
       security: _forgotSecurity,
-      onSubmit: (password, confirm) => AuthService.resetForgotPassword(
+      onSubmit: (password, confirm, _) => AuthService.resetForgotPassword(
         identifier: identifier,
         password: password,
         confirmPassword: confirm,

@@ -72,8 +72,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Set New Password'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField).at(0), 'NewPass2@');
-      await tester.enterText(find.byType(TextField).at(1), 'Mismatch2@');
+      expect(find.text('Current Password'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).at(0), 'OldPass1!');
+      await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(2), 'Mismatch2@');
       await tester.tap(find.text('Update Password'));
       await tester.pumpAndSettle();
       // Errors appear inside the sheet, where a snackbar would be hidden.
@@ -83,7 +85,7 @@ void main() {
               .data,
           'Passwords do not match.');
       expect(calls, isNot(contains('/profile/password')));
-      await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
       await tester.pump();
       expect(find.byKey(const ValueKey('set_password_error')), findsNothing);
       await tester.tap(find.text('Update Password'));
@@ -98,7 +100,11 @@ void main() {
         '/profile/password/verify-otp',
         '/profile/password',
       ]);
-      expect(saved, {'password': 'NewPass2@', 'confirm_password': 'NewPass2@'});
+      expect(saved, {
+        'current_password': 'OldPass1!',
+        'password': 'NewPass2@',
+        'confirm_password': 'NewPass2@'
+      });
       await tester.pumpWidget(const SizedBox());
     },
         () => MockClient((request) async {
@@ -120,6 +126,62 @@ void main() {
             }));
   });
 
+  testWidgets(
+      'current password is required and incorrect-password errors stay inline',
+      (tester) async {
+    UserSession.setLoggedInUser(username: 'Karl', token: 'signed-session');
+    addTearDown(UserSession.logout);
+    var saves = 0;
+    await http.runWithClient(() async {
+      await pumpScreen(tester);
+      await openFromEditProfile(tester, 'profile_change_password');
+      await tester.enterText(
+          find.byKey(const ValueKey('otp_code_input')), '123456');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(find.byType(TextField).first).obscureText,
+          isTrue);
+      await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      expect(find.text('Please enter your current password.'), findsOneWidget);
+      expect(saves, 0);
+      await tester.enterText(find.byType(TextField).first, 'WrongPass1!');
+      await tester.pump();
+      expect(find.byKey(const ValueKey('set_password_error')), findsNothing);
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      expect(
+          find.descendant(
+              of: find.byType(BottomSheet),
+              matching: find.text('Current password is incorrect.')),
+          findsOneWidget);
+      expect(saves, 1);
+      await tester.enterText(find.byType(TextField).first, 'OldPass1!');
+      await tester.pump();
+      expect(find.text('Current password is incorrect.'), findsNothing);
+      await tester.tap(find.text('Update Password'));
+      await tester.pumpAndSettle();
+      expect(saves, 2);
+      expect(find.text('Password updated.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              if (request.method == 'GET')
+                return http.Response(profileJson, 200);
+              if (request.url.path == '/profile/password') {
+                saves++;
+                final body = jsonDecode(request.body) as Map<String, dynamic>;
+                if (body['current_password'] != 'OldPass1!') {
+                  return http.Response(
+                      '{"detail":"Current password is incorrect."}', 400);
+                }
+              }
+              return http.Response(
+                  '{"success":true,"sent_to":"k***@example.com"}', 200);
+            }));
+  });
+
   testWidgets('a rejected new password shows the server reason in the sheet',
       (tester) async {
     UserSession.setLoggedInUser(username: 'Karl', token: 'signed-session');
@@ -131,8 +193,10 @@ void main() {
       await tester.enterText(
           find.byKey(const ValueKey('otp_code_input')), '123456');
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).at(0), 'NewPass2@');
+      expect(find.text('Current Password'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).at(0), 'OldPass1!');
       await tester.enterText(find.byType(TextField).at(1), 'NewPass2@');
+      await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
       await tester.tap(find.text('Update Password'));
       await tester.pumpAndSettle();
       expect(find.text(reason), findsOneWidget);

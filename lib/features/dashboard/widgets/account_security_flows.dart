@@ -36,7 +36,7 @@ VerificationSecurityController _security(ScaffoldMessengerState messenger) =>
           Colors.orangeAccent.shade700);
     });
 
-/// Code to the account email → verify → new password. The user stays logged in.
+/// Email code → verify → current and new passwords. The user stays logged in.
 Future<void> startChangePasswordFlow(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context);
@@ -82,7 +82,9 @@ Future<void> startChangePasswordFlow(BuildContext context) async {
     final updated = await SetNewPasswordSheet.show(
       context,
       security: security,
-      onSubmit: ProfileService.changePassword,
+      requireCurrentPassword: true,
+      onSubmit: (password, confirm, currentPassword) =>
+          ProfileService.changePassword(password, confirm, currentPassword!),
     );
     if (updated) _snack(messenger, 'Password updated.', _green);
   } finally {

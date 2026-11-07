@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from postgrest.exceptions import APIError
 
 from app.database.supabase import supabase
+from app.utils import otp_limits
 from app.utils.email import mask_email, send_email_changed_notice
 from app.utils.passwords import ensure_different_password, password_hash, validate_new_password
 from app.utils.pending_otp import delete_pending, issue_code, require_verified, verify_code
@@ -77,6 +78,7 @@ class VerifyCodeRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    current_password: str
     password: str
     confirm_password: str
 
@@ -133,6 +135,18 @@ def verify_password_change_code(data: VerifyCodeRequest, user_id: int = Depends(
 def change_password(data: ChangePasswordRequest, user_id: int = Depends(current_user_id)):
     account = _account(user_id)
     require_verified(account['email'], account['username'])
+    limit_purpose = 'password_change_current_password'
+    otp_limits.ensure_can_guess(limit_purpose, user_id)
+    try:
+        current_matches = bool(account['password']) and password_hash.verify(
+            data.current_password, account['password'])
+    except Exception:
+        current_matches = False
+    if not current_matches:
+        remaining = otp_limits.record_wrong_guess(limit_purpose, user_id)
+        if remaining == 0:
+            otp_limits.ensure_can_guess(limit_purpose, user_id)
+        raise HTTPException(400, 'Current password is incorrect.')
     validate_new_password(data.password, data.confirm_password)
     ensure_different_password(data.password, account['password'])
     updated = supabase.table('userInfo').update(
@@ -140,6 +154,7 @@ def change_password(data: ChangePasswordRequest, user_id: int = Depends(current_
     if not updated.data:
         raise HTTPException(503, 'Could not update your password. Please try again.')
     delete_pending(account['email'])
+    otp_limits.clear_guesses(limit_purpose, user_id)
     return {'success': True}
 
 

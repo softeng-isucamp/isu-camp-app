@@ -100,6 +100,7 @@ void main() {
       await tester.enterText(
           find.byKey(const ValueKey('otp_code_input')), '123456');
       await tester.pumpAndSettle();
+      expect(find.text('Current Password'), findsNothing);
       await tester.enterText(find.byType(TextField).at(2), 'NewPass2@');
       await tester.enterText(find.byType(TextField).at(3), 'NewPass2@');
       await tester.tap(find.text('Update Password'));

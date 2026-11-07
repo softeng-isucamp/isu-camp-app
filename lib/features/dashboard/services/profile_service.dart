@@ -88,10 +88,16 @@ class ProfileService {
       _post('/password/verify-otp', {'otp': otp}, 'Code verification failed.',
           codeStep: true);
 
-  static Future<void> changePassword(String password, String confirm) => _post(
-      '/password',
-      {'password': password, 'confirm_password': confirm},
-      'Could not update your password.');
+  static Future<void> changePassword(
+          String password, String confirm, String currentPassword) =>
+      _post(
+          '/password',
+          {
+            'current_password': currentPassword,
+            'password': password,
+            'confirm_password': confirm
+          },
+          'Could not update your password.');
 
   static Future<void> requestEmailChangeCode(String email) => _post(
       '/email/request-otp',

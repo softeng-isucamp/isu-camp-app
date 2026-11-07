@@ -235,24 +235,32 @@ class SetNewPasswordSheet extends StatefulWidget {
     super.key,
     required this.security,
     required this.onSubmit,
+    this.requireCurrentPassword = false,
   });
 
   final VerificationSecurityController security;
-  final Future<void> Function(String password, String confirmPassword) onSubmit;
+  final bool requireCurrentPassword;
+  final Future<void> Function(
+          String password, String confirmPassword, String? currentPassword)
+      onSubmit;
 
   /// Resolves to true only when the password was saved.
   static Future<bool> show(
     BuildContext context, {
     required VerificationSecurityController security,
-    required Future<void> Function(String password, String confirmPassword)
+    required Future<void> Function(
+            String password, String confirmPassword, String? currentPassword)
         onSubmit,
+    bool requireCurrentPassword = false,
   }) async =>
       await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) =>
-            SetNewPasswordSheet(security: security, onSubmit: onSubmit),
+        builder: (_) => SetNewPasswordSheet(
+            security: security,
+            onSubmit: onSubmit,
+            requireCurrentPassword: requireCurrentPassword),
       ) ??
       false;
 
@@ -262,6 +270,8 @@ class SetNewPasswordSheet extends StatefulWidget {
 
 class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     with _ClosesOnTimeout {
+  final _currentPassword = TextEditingController();
+  bool _currentVisible = false;
   final _newPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
   bool _newVisible = false;
@@ -276,6 +286,7 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
 
   @override
   void dispose() {
+    _currentPassword.dispose();
     _newPassword.dispose();
     _confirmPassword.dispose();
     super.dispose();
@@ -334,13 +345,16 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     if (_saving) return;
     final password = _newPassword.text;
     final confirm = _confirmPassword.text;
-    final problem = password.isEmpty || confirm.isEmpty
-        ? 'Please enter and confirm your new password.'
-        : password != confirm
-            ? 'Passwords do not match.'
-            : !meetsRules
-                ? 'Please meet all password requirements.'
-                : null;
+    final problem =
+        widget.requireCurrentPassword && _currentPassword.text.isEmpty
+            ? 'Please enter your current password.'
+            : password.isEmpty || confirm.isEmpty
+                ? 'Please enter and confirm your new password.'
+                : password != confirm
+                    ? 'Passwords do not match.'
+                    : !meetsRules
+                        ? 'Please meet all password requirements.'
+                        : null;
     if (problem != null) {
       setState(() => _error = problem);
       return;
@@ -350,7 +364,8 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
       _error = null;
     });
     try {
-      await widget.onSubmit(password, confirm);
+      await widget.onSubmit(password, confirm,
+          widget.requireCurrentPassword ? _currentPassword.text : null);
       if (mounted) closeWith(true);
     } catch (error) {
       if (mounted) setState(() => _error = _message(error));
@@ -396,6 +411,22 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
                 ),
               ),
               const SizedBox(height: 16),
+              if (widget.requireCurrentPassword) ...[
+                _label('Current Password'),
+                const SizedBox(height: 6),
+                _passwordField(
+                  controller: _currentPassword,
+                  visible: _currentVisible,
+                  hint: 'Enter current password',
+                  onToggle: () =>
+                      setState(() => _currentVisible = !_currentVisible),
+                  onChanged: (_) {
+                    security.recordActivity();
+                    if (_error != null) setState(() => _error = null);
+                  },
+                ),
+                const SizedBox(height: 16),
+              ],
               _label('New Password'),
               const SizedBox(height: 6),
               _passwordField(
