@@ -129,6 +129,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(IndoorLocationDetailsDialog), findsNothing);
     expect(selected, isNull);
+    await tester.ensureVisible(find.text('Details'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Get Directions'));

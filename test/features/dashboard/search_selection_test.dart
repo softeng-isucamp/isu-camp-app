@@ -77,4 +77,62 @@ void main() {
               }));
     });
   }
+
+  testWidgets(
+      'submitting search via enter opens draggable SearchResultsSheet with matching and related results',
+      (tester) async {
+    final bytes = File('assets/images/logo_isu_png.png').readAsBytesSync();
+    await tester.binding.setSurfaceSize(const Size(1200, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(home: MapViewScreen()));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.enterText(find.byType(TextField), 'Administration');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(SearchResultsSheet), findsOneWidget);
+      expect(find.textContaining('SEARCH RESULTS'), findsOneWidget);
+      expect(find.text('Administration Building'), findsOneWidget);
+      expect(find.text('Administration Parking'), findsOneWidget);
+      expect(find.text('DIRECTIONS'), findsWidgets);
+
+      await tester.tap(find.text('DIRECTIONS').first);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(ChooseRouteSheet), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+        () => MockClient((request) async {
+              if (request.url.path == '/campus/buildings') {
+                return http.Response(
+                    jsonEncode({
+                      'buildings': [
+                        {
+                          'id': '2',
+                          'name': 'Administration Building',
+                          'category': 'Administration',
+                          'description': 'Main administration building',
+                          'latitude': 16.72,
+                          'longitude': 121.69,
+                          'rooms': [],
+                        },
+                        {
+                          'id': '99',
+                          'name': 'Administration Parking',
+                          'category': 'Parking',
+                          'description': 'Parking area',
+                          'isParking': true,
+                          'latitude': 16.7205,
+                          'longitude': 121.6905,
+                          'rooms': [],
+                        },
+                      ]
+                    }),
+                    200);
+              }
+              return http.Response.bytes(bytes, 200,
+                  headers: {'content-type': 'image/png'});
+            }));
+  });
 }
