@@ -1,3 +1,6 @@
+import 'package:flutter/material.dart';
+import 'package:isu_camp_app/features/auth/services/auth_service.dart';
+import 'package:isu_camp_app/features/auth/widgets/verification_sheets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isu_camp_app/features/auth/services/verification_security_controller.dart';
 
@@ -48,6 +51,52 @@ void main() {
     now = now.add(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 1));
     expect(timeoutReason, VerificationTimeoutReason.inactivity);
+    controller.dispose();
+  });
+
+  testWidgets('resending refreshes the code without restoring wrong guesses',
+      (tester) async {
+    final controller = VerificationSecurityController(
+      resendCooldown: Duration.zero,
+      onTimeout: (_) {},
+    );
+    controller.startOtpChallenge();
+    controller.recordIncorrectAttempt(serverRemaining: 3);
+    controller.recordResend();
+    expect(controller.attemptsRemaining, 3);
+    expect(controller.canVerify, isTrue);
+    controller.dispose();
+  });
+
+  testWidgets('the code sheet still shows server attempts after a resend',
+      (tester) async {
+    final controller = VerificationSecurityController(
+      resendCooldown: Duration.zero,
+      onTimeout: (_) {},
+    )..startOtpChallenge();
+    var resends = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: VerifyCodeSheet(
+      security: controller,
+      description: 'Enter the code sent to demo@example.com.',
+      onVerify: (_) async => throw const OtpException(
+          'Invalid OTP. 3 attempt(s) remaining.',
+          attemptsRemaining: 3),
+      onResend: () async {
+        resends++;
+      },
+    ))));
+    await tester.enterText(
+        find.byKey(const ValueKey('otp_code_input')), '111111');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('3 attempts left'), findsOneWidget);
+    await tester.tap(find.text('Resend'));
+    await tester.pumpAndSettle();
+    expect(resends, 1);
+    expect(find.textContaining('3 attempts left'), findsOneWidget);
+    expect(find.textContaining('5 attempts left'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
 

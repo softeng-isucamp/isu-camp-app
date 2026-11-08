@@ -4,7 +4,13 @@ import '../../auth/services/user_session.dart';
 import '../services/profile_service.dart';
 
 class EditProfileSheet extends StatefulWidget {
-  const EditProfileSheet({super.key});
+  const EditProfileSheet(
+      {super.key, this.onChangeEmail, this.onChangePassword});
+
+  /// Run after this sheet closes when the user taps "Change" on that field.
+  final VoidCallback? onChangeEmail;
+  final VoidCallback? onChangePassword;
+
   @override
   State<EditProfileSheet> createState() => _EditProfileSheetState();
 }
@@ -85,6 +91,19 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     }
   }
 
+  /// Closes this sheet, then starts [flow] from the profile screen.
+  Widget _changeButton(String key, VoidCallback? flow) => flow == null
+      ? const Icon(Icons.lock_outline)
+      : TextButton(
+          key: ValueKey(key),
+          onPressed: _saving
+              ? null
+              : () {
+                  Navigator.pop(context);
+                  flow();
+                },
+          child: const Text('Change'));
+
   @override
   Widget build(BuildContext context) => PopScope(
         canPop: !_saving,
@@ -146,10 +165,23 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                         TextFormField(
                             initialValue: _email,
                             readOnly: true,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                                 labelText: 'Email',
-                                suffixIcon: Icon(Icons.lock_outline),
-                                border: OutlineInputBorder())),
+                                suffixIcon: _changeButton(
+                                    'profile_change_email',
+                                    widget.onChangeEmail),
+                                border: const OutlineInputBorder())),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                            initialValue: '••••••••',
+                            readOnly: true,
+                            enableInteractiveSelection: false,
+                            decoration: InputDecoration(
+                                labelText: 'Password',
+                                suffixIcon: _changeButton(
+                                    'profile_change_password',
+                                    widget.onChangePassword),
+                                border: const OutlineInputBorder())),
                         if (_error != null)
                           Padding(
                               padding: const EdgeInsets.only(top: 12),

@@ -7,9 +7,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Subject line and opening sentence for each kind of emailed code.
+OTP_PURPOSES = {
+    "signup": ("ISU-CAMP Email Verification",
+               "Your ISU-CAMP verification code is:"),
+    "password_reset": ("ISU-CAMP Password Reset Code",
+                       "Use this code to reset your ISU-CAMP password:"),
+    "password_change": ("ISU-CAMP Password Change Code",
+                        "Use this code to change your ISU-CAMP password:"),
+    "email_change": ("ISU-CAMP Email Change Code",
+                     "Use this code to confirm your new ISU-CAMP email address:"),
+}
 
-# This block reads SMTP settings, builds the email, and sends it after authenticating with the mail server.
-def send_otp_email(recipient: str, otp: str):
+
+def mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if domain else "***"
+
+
+# This block reads SMTP settings and sends a plain-text message after authenticating.
+def _send(recipient: str, subject: str, body: str):
     smtp_host = os.getenv("MAIL_SERVER", "smtp.gmail.com")
     smtp_port = int(os.getenv("MAIL_PORT", "587"))
     use_tls = os.getenv("MAIL_USE_TLS", "True").strip().lower() in {
@@ -23,14 +40,24 @@ def send_otp_email(recipient: str, otp: str):
         raise RuntimeError("SMTP email settings are not configured")
 
     message = EmailMessage()
-    message["Subject"] = "ISU-CAMP Email Verification"
+    message["Subject"] = subject
     message["From"] = sender
     message["To"] = recipient
+    message.set_content(body)
 
-    message.set_content(
-        f"""Hello,
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        # When enabled, upgrades the SMTP connection with STARTTLS before logging in.
+        if use_tls:
+            server.starttls()
+        server.login(username, password)
+        server.send_message(message)
 
-Your ISU-CAMP verification code is:
+
+def send_otp_email(recipient: str, otp: str, purpose: str = "signup"):
+    subject, intro = OTP_PURPOSES[purpose]
+    _send(recipient, subject, f"""Hello,
+
+{intro}
 
 {otp}
 
@@ -39,12 +66,16 @@ This code will expire in 5 minutes.
 If you did not request this code, please ignore this email.
 
 ISU-CAMP Team
-"""
-    )
+""")
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        # When enabled, upgrades the SMTP connection with STARTTLS before logging in.
-        if use_tls:
-            server.starttls()
-        server.login(username, password)
-        server.send_message(message)
+
+# This block tells the previous address that the account email was changed.
+def send_email_changed_notice(old_email: str, new_email: str):
+    _send(old_email, "Your ISU-CAMP email was changed", f"""Hello,
+
+The email address on your ISU-CAMP account was changed to {mask_email(new_email)}.
+
+If you did not make this change, please contact the ISU-CAMP team.
+
+ISU-CAMP Team
+""")

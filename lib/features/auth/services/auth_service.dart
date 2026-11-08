@@ -78,6 +78,15 @@ class AuthService {
     return readMessage(data is Map ? data['detail'] : null) ?? fallback;
   }
 
+  /// Builds an [OtpException] from a failed code request or check.
+  static OtpException otpException(
+          http.Response response, dynamic data, String fallback) =>
+      _otpException(
+          response, data is Map<String, dynamic> ? data : const {}, fallback);
+
+  static String errorMessage(dynamic data, String fallback) =>
+      _errorMessage(data, fallback);
+
   static OtpException _otpException(
     http.Response response,
     Map<String, dynamic> data,

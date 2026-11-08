@@ -1,10 +1,14 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 from postgrest.exceptions import APIError
 
 from app.database.supabase import supabase
+from app.utils import otp_limits
+from app.utils.email import mask_email, send_email_changed_notice
+from app.utils.passwords import ensure_different_password, password_hash, validate_new_password
+from app.utils.pending_otp import delete_pending, issue_code, require_verified, verify_code
 from app.utils.session import current_user_id
 
 router = APIRouter(prefix='/profile', tags=['Profile'])
@@ -61,3 +65,128 @@ def update_profile(data: UpdateProfileRequest, user_id: int = Depends(current_us
         raise HTTPException(503, 'Could not save your username. Please try again.') from None
     except Exception:
         raise HTTPException(503, 'Could not save your username. Please try again.') from None
+
+
+# ============================================================
+# ACCOUNT CHANGES (password and email) — codes are emailed, user comes from the session
+# ============================================================
+
+class VerifyCodeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    otp: int
+
+
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    current_password: str
+    password: str
+    confirm_password: str
+
+
+class EmailChangeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    email: EmailStr
+
+
+class VerifyEmailChangeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    email: EmailStr
+    otp: int
+
+
+def _account(user_id: int):
+    user = supabase.table('user').select('id, username, info_id').eq('id', user_id).execute()
+    if not user.data:
+        raise HTTPException(404, 'User account not found.')
+    row = user.data[0]
+    info = supabase.table('userInfo').select('id, email, password').eq('id', row['info_id']).execute()
+    if not info.data:
+        raise HTTPException(404, 'User information not found.')
+    return {'username': row['username'], 'info_id': row['info_id'],
+            'email': info.data[0]['email'], 'password': info.data[0].get('password')}
+
+
+def _ilike_literal(value: str) -> str:
+    return value.replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_')
+
+
+# This block checks that an address is not used by another account (case-insensitive).
+def _ensure_email_available(email: str, info_id):
+    matches = supabase.table('userInfo').select('id').ilike('email', _ilike_literal(email)).execute()
+    if any(row['id'] != info_id for row in matches.data):
+        raise HTTPException(409, 'That email is already in use.')
+
+
+@router.post('/password/request-otp')
+def request_password_change_code(user_id: int = Depends(current_user_id)):
+    account = _account(user_id)
+    issue_code(account['email'], account['username'], 'password_change', user_id)
+    return {'success': True, 'sent_to': mask_email(account['email'])}
+
+
+@router.post('/password/verify-otp')
+def verify_password_change_code(data: VerifyCodeRequest, user_id: int = Depends(current_user_id)):
+    account = _account(user_id)
+    verify_code(account['email'], account['username'], data.otp, 'password_change', user_id)
+    return {'success': True}
+
+
+@router.post('/password')
+def change_password(data: ChangePasswordRequest, user_id: int = Depends(current_user_id)):
+    account = _account(user_id)
+    require_verified(account['email'], account['username'])
+    limit_purpose = 'password_change_current_password'
+    otp_limits.ensure_can_guess(limit_purpose, user_id)
+    try:
+        current_matches = bool(account['password']) and password_hash.verify(
+            data.current_password, account['password'])
+    except Exception:
+        current_matches = False
+    if not current_matches:
+        remaining = otp_limits.record_wrong_guess(limit_purpose, user_id)
+        if remaining == 0:
+            otp_limits.ensure_can_guess(limit_purpose, user_id)
+        raise HTTPException(400, 'Current password is incorrect.')
+    validate_new_password(data.password, data.confirm_password)
+    ensure_different_password(data.password, account['password'])
+    updated = supabase.table('userInfo').update(
+        {'password': password_hash.hash(data.password)}).eq('id', account['info_id']).execute()
+    if not updated.data:
+        raise HTTPException(503, 'Could not update your password. Please try again.')
+    delete_pending(account['email'])
+    otp_limits.clear_guesses(limit_purpose, user_id)
+    return {'success': True}
+
+
+@router.post('/email/request-otp')
+def request_email_change_code(data: EmailChangeRequest, user_id: int = Depends(current_user_id)):
+    account = _account(user_id)
+    email = data.email.strip()
+    if email.casefold() == account['email'].casefold():
+        raise HTTPException(400, 'That is already your email.')
+    _ensure_email_available(email, account['info_id'])
+    issue_code(email, account['username'], 'email_change', user_id)
+    return {'success': True, 'sent_to': email}
+
+
+# This block confirms the code sent to the new address, then applies the change.
+@router.post('/email/verify-otp')
+def confirm_email_change(data: VerifyEmailChangeRequest, user_id: int = Depends(current_user_id)):
+    account = _account(user_id)
+    email = data.email.strip()
+    verify_code(email, account['username'], data.otp, 'email_change', user_id)
+    _ensure_email_available(email, account['info_id'])
+    try:
+        updated = supabase.table('userInfo').update({'email': email}).eq('id', account['info_id']).execute()
+    except APIError as error:
+        if error.code == '23505':
+            raise HTTPException(409, 'That email is already in use.') from None
+        raise HTTPException(503, 'Could not update your email. Please try again.') from None
+    if not updated.data:
+        raise HTTPException(503, 'Could not update your email. Please try again.')
+    delete_pending(email)
+    try:
+        send_email_changed_notice(account['email'], email)
+    except Exception:
+        pass  # The change is done; the notice is best effort.
+    return {'username': account['username'], 'email': email}
