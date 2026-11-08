@@ -21,6 +21,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
   final _form = GlobalKey<FormState>();
   final _sessionToken = UserSession.accessToken;
   String _email = '';
+  String? _userType;
   String? _error;
   bool _loading = true;
   bool _saving = false;
@@ -47,8 +48,10 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
       if (!mounted || _sessionToken != UserSession.accessToken) return;
       _username.text = profile.username;
       _email = profile.email;
+      _userType = profile.userType;
       UserSession.currentUsername = profile.username;
       UserSession.currentEmail = profile.email;
+      UserSession.currentUserType = profile.userType;
     } catch (error) {
       if (mounted)
         _error = error is ProfileException
@@ -67,17 +70,19 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
       _error = null;
     });
     try {
-      final profile = await ProfileService.updateUsername(_username.text);
+      final profile = await ProfileService.update(
+          username: _username.text, userType: _userType);
       if (!mounted || _sessionToken != UserSession.accessToken) return;
       UserSession.currentUsername = profile.username;
       UserSession.currentEmail = profile.email;
-      String message = 'Username updated.';
+      UserSession.currentUserType = profile.userType;
+      String message = 'Profile updated.';
       try {
         await RememberedSessionStore.updateProfile(
             username: profile.username, email: profile.email);
       } catch (_) {
         message =
-            'Username updated. This device could not refresh its saved profile.';
+            'Profile updated. This device could not refresh its saved profile.';
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -88,7 +93,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
         setState(() => _error = error is ProfileException
             ? ErrorMessages.present(error.message,
                 'Could not update your profile. Please try again.')
-            : 'Could not save your username. Check your connection and try again.');
+            : 'Could not save your profile. Check your connection and try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -163,6 +168,22 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                                   .hasMatch(value?.trim() ?? '')
                               ? null
                               : 'Use 3–30 letters, numbers, or underscores.',
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          key: const ValueKey('profile_account_type'),
+                          initialValue: _userType,
+                          hint: const Text('Not set'),
+                          decoration: const InputDecoration(
+                              labelText: 'Account type',
+                              border: OutlineInputBorder()),
+                          items: accountTypes
+                              .map((type) => DropdownMenuItem(
+                                  value: type, child: Text(type)))
+                              .toList(),
+                          onChanged: _saving
+                              ? null
+                              : (type) => setState(() => _userType = type),
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
