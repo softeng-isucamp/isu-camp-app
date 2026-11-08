@@ -32,7 +32,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text('Please enter your username or email.'),
+      find.text('Enter your username or email.'),
       findsOneWidget,
     );
     expect(find.text('Reset Password'), findsOneWidget);

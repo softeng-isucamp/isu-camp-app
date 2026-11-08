@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoggingIn = false;
   bool _keepSignedIn = false;
   int _failedLoginAttempts = 0;
+  int? _serverRemainingAttempts;
   Timer? _lockoutTimer;
   DateTime? _loginLockedUntil;
   late final VerificationSecurityController _forgotSecurity;
@@ -89,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (identifier.isEmpty || password.isEmpty) {
       _showSnackBar(
-        'Please fill in both Username and Password.',
+        'Enter your username or email and password.',
         Colors.redAccent,
       );
       return;
@@ -152,14 +154,20 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
 
-      String message = error.toString();
+      String message =
+          ErrorMessages.present(error, 'Could not sign in. Please try again.');
 
       if (error is LoginException && error.retryAfterSeconds != null) {
         _startLockout(error.retryAfterSeconds!);
+        message =
+            'Too many failed attempts. Try again in ${_formatLockoutTime()}.';
       }
 
       if (error is LoginException && error.failedAttempts != null) {
-        setState(() => _failedLoginAttempts = error.failedAttempts!);
+        setState(() {
+          _failedLoginAttempts = error.failedAttempts!;
+          _serverRemainingAttempts = error.remainingAttempts;
+        });
       }
 
       _passwordController.clear();
@@ -192,6 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() {
             _loginLockedUntil = null;
             _failedLoginAttempts = 0;
+            _serverRemainingAttempts = null;
           });
         }
       } else {
@@ -318,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                                   if (identifier.isEmpty) {
                                     setSheetState(() => requestError =
-                                        'Please enter your username or email.');
+                                        'Enter your username or email.');
                                     return;
                                   }
 
@@ -346,9 +355,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     );
                                   } catch (error) {
                                     if (!sheetContext.mounted) return;
-                                    setSheetState(() => requestError = error
-                                        .toString()
-                                        .replaceFirst('Exception: ', ''));
+                                    setSheetState(() => requestError =
+                                        ErrorMessages.present(error,
+                                            'Could not send the password reset code. Please try again.'));
                                   } finally {
                                     if (sheetContext.mounted) {
                                       setSheetState(() => requesting = false);
@@ -693,7 +702,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 6),
                         Center(
                           child: Text(
-                            '${(6 - _failedLoginAttempts).clamp(0, 6)} login attempts remaining',
+                            '${_serverRemainingAttempts ?? (6 - _failedLoginAttempts).clamp(0, 6)} ${(_serverRemainingAttempts ?? (6 - _failedLoginAttempts).clamp(0, 6)) == 1 ? 'sign-in attempt' : 'sign-in attempts'} remaining',
                             style: GoogleFonts.montserrat(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,

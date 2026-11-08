@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -195,7 +196,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     if (username.isEmpty || email.isEmpty) {
       _showSnackBar(
-        'Please fill in both Username and Email.',
+        'Enter your username and email address.',
         Colors.redAccent,
       );
       return;
@@ -203,7 +204,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     if (_selectedRole == null) {
       _showSnackBar(
-        'Please select Student, Staff, or Visitor.',
+        'Select Student, Staff, or Visitor.',
         Colors.redAccent,
       );
       return;
@@ -213,7 +214,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     if (!emailRegex.hasMatch(email)) {
       _showSnackBar(
-        'Please enter a valid email address.',
+        'Enter a valid email address.',
         Colors.orangeAccent.shade700,
       );
       return;
@@ -240,7 +241,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     } catch (error) {
       if (!mounted) return;
 
-      String message = error.toString();
+      String message = ErrorMessages.present(
+          error, 'Could not send the verification code. Please try again.');
       message = message.replaceFirst('Exception: ', '');
 
       _showSnackBar(
@@ -305,7 +307,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     } catch (error) {
       if (!mounted) return;
       _showSnackBar(
-        error.toString().replaceFirst('Exception: ', ''),
+        ErrorMessages.present(
+            error, 'Could not send the verification code. Please try again.'),
         Colors.redAccent,
       );
     } finally {
@@ -321,7 +324,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     if (password.isEmpty || confirmPassword.isEmpty) {
       _showSnackBar(
-        'Please enter and confirm your password.',
+        'Enter and confirm your password.',
         Colors.redAccent,
       );
       return;
@@ -341,7 +344,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         !_hasSpecialChar ||
         !_hasNoCommonPatterns) {
       _showSnackBar(
-        'Please meet all required password criteria.',
+        'Meet all password requirements.',
         Colors.orangeAccent.shade700,
       );
       return;
@@ -414,7 +417,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     } catch (error) {
       if (!mounted) return;
 
-      String message = error.toString();
+      String message = ErrorMessages.present(
+          error, 'Could not create your account. Please try again.');
       message = message.replaceFirst('Exception: ', '');
 
       _showSnackBar(

@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -457,7 +458,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
         _lastPositionAt = null;
         setState(() {
           _locationStatus =
-              'GPS is unavailable. Check Location Services and permissions.';
+              'Could not find your location. Check location services and app permissions.';
           _navigationStatus = _locationStatus;
         });
       });
@@ -756,7 +757,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
       if (_historySessionId == sessionId) _historySessionId = null;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'History was not saved. ${error.toString().replaceFirst('Exception: ', '')}')));
+              ErrorMessages.present(error, 'Could not save your navigation history.'))));
     });
   }
 
@@ -894,7 +895,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
       setState(() {
         _isRerouting = false;
         _routeError =
-            'Route update failed. ${error.toString().replaceFirst('Exception: ', '')}';
+            ErrorMessages.present(error, 'Could not update your route.');
         _navigationStatus = _routeError;
       });
     }

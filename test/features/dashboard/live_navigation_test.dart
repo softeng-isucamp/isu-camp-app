@@ -161,11 +161,11 @@ void main() {
         expect(find.text('Retry route'), findsOneWidget);
         gps.move(16.7205, 121.6895);
         await tester.pump();
-        expect(find.textContaining('Route update failed'), findsOneWidget);
+        expect(find.textContaining('Could not update your route'), findsOneWidget);
         await tester.tap(find.text('Retry route'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));
-        expect(find.textContaining('Route update failed'), findsNothing);
+        expect(find.textContaining('Could not update your route'), findsNothing);
         elapsed = const Duration(seconds: 40);
         await tester.pump(const Duration(seconds: 5));
         expect(find.textContaining('GPS signal lost'), findsOneWidget);

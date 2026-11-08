@@ -92,7 +92,7 @@ void main() {
       await tester.ensureVisible(find.text('History'));
       await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
-      expect(find.text('Could not load history.'), findsOneWidget);
+      expect(find.text('Could not load your history. Please try again.'), findsOneWidget);
       fail = false;
       await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();

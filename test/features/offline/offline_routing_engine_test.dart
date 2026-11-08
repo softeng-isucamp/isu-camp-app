@@ -170,7 +170,7 @@ void main() {
     expect(
       () => fromMainGate(mode: 'bicycle'),
       throwsA(isA<OfflineRoutingException>().having((error) => error.message,
-          'message', contains('No connected bicycle route'))),
+          'message', contains('No bicycle route'))),
     );
   });
 

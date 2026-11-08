@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -45,7 +46,8 @@ class OtpException implements Exception {
 
 class AuthService {
   static String verificationErrorMessage(Object error) => error is OtpException
-      ? error.message
+      ? ErrorMessages.present(
+          error.message, 'Could not verify the code. Please try again.')
       : 'Could not complete verification. Check your connection and try again.';
 
   static const String _configuredBaseUrl =
@@ -142,7 +144,7 @@ class AuthService {
     final failedAttempts = response.headers['x-login-attempts'];
     final remainingAttempts = response.headers['x-login-attempts-remaining'];
     throw LoginException(
-      _errorMessage(data, 'Login failed.'),
+      _errorMessage(data, 'Could not sign in. Please try again.'),
       retryAfterSeconds: retryAfter == null ? null : int.tryParse(retryAfter),
       failedAttempts:
           failedAttempts == null ? null : int.tryParse(failedAttempts),
@@ -181,7 +183,7 @@ class AuthService {
     throw _otpException(
       response,
       data,
-      'Failed to send verification code.',
+      'Could not send the verification code. Please try again.',
     );
   }
 
@@ -212,7 +214,8 @@ class AuthService {
       return data;
     }
 
-    throw _otpException(response, data, 'OTP verification failed.');
+    throw _otpException(
+        response, data, 'Could not verify the code. Please try again.');
   }
 
   // =========================================================
@@ -247,7 +250,7 @@ class AuthService {
     }
 
     throw Exception(
-      _errorMessage(data, 'Failed to create account.'),
+      _errorMessage(data, 'Could not create your account. Please try again.'),
     );
   }
 
@@ -279,7 +282,7 @@ class AuthService {
     throw _otpException(
       response,
       data,
-      'Failed to send password reset code.',
+      'Could not send the password reset code. Please try again.',
     );
   }
 
@@ -310,7 +313,8 @@ class AuthService {
       return data;
     }
 
-    throw _otpException(response, data, 'OTP verification failed.');
+    throw _otpException(
+        response, data, 'Could not verify the code. Please try again.');
   }
 
   // =========================================================
@@ -343,7 +347,7 @@ class AuthService {
     }
 
     throw Exception(
-      _errorMessage(data, 'Failed to reset password.'),
+      _errorMessage(data, 'Could not reset your password. Please try again.'),
     );
   }
 }

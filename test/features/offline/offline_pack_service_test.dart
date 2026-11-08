@@ -158,7 +158,7 @@ void main() {
       expect(pack.status.bytesOnDisk,
           fixture.totalBytes - fixture.files[path]!.length);
       expect(pack.status.bytesInFlight, 0);
-      expect(pack.status.message, contains('verification'));
+      expect(pack.status.message, contains('Resume'));
     });
   }
 

@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/error_messages.dart';
 import 'package:flutter/material.dart';
 import '../../auth/services/remembered_session_store.dart';
 import '../../auth/services/user_session.dart';
@@ -51,7 +52,8 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     } catch (error) {
       if (mounted)
         _error = error is ProfileException
-            ? error.message
+            ? ErrorMessages.present(error.message,
+                'Could not load your profile. Please try again.')
             : 'Could not load your profile. Check your connection and try again.';
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -84,7 +86,8 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     } catch (error) {
       if (mounted)
         setState(() => _error = error is ProfileException
-            ? error.message
+            ? ErrorMessages.present(error.message,
+                'Could not update your profile. Please try again.')
             : 'Could not save your username. Check your connection and try again.');
     } finally {
       if (mounted) setState(() => _saving = false);

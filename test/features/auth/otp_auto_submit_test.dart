@@ -83,11 +83,11 @@ void main() {
       await tester.enterText(input, '123456');
       await tester.pumpAndSettle();
       expect(find.textContaining('5 attempts left'), findsOneWidget);
-      expect(find.text('Service unavailable'), findsOneWidget);
+      expect(find.text('Could not verify the code. Please try again.'), findsOneWidget);
       await tester.enterText(input, '654321');
       await tester.pumpAndSettle();
       expect(find.textContaining('4 attempts left'), findsOneWidget);
-      expect(find.text('Invalid OTP. 4 attempt(s) remaining.'), findsOneWidget);
+      expect(find.text('That code is incorrect. 4 attempts remaining.'), findsOneWidget);
       expect(tester.widget<TextField>(input).controller!.text, isEmpty);
       await tester.enterText(input, '111111');
       await tester.pumpAndSettle();

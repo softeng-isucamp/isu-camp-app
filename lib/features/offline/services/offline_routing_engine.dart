@@ -350,7 +350,7 @@ class OfflineRoutingEngine {
           .toSet();
       if (starts.length != 1) {
         throw const OfflineRoutingException(
-            'The main gate could not be identified uniquely in the routing network.');
+            'A route from the main gate is unavailable.');
       }
     } else {
       final position = parseCoordinate(origin['latitude'], origin['longitude']);
@@ -367,7 +367,7 @@ class OfflineRoutingEngine {
       }
       if (candidates.isEmpty) {
         throw OfflineRoutingException(
-            'No ${label.toLowerCase()} starting point is available on permitted pathways.');
+            'No starting point is available for this ${label.toLowerCase()} route.');
       }
       final nearest = candidates.reduce((a, b) =>
           a.$3.distance <= b.$3.distance ? a : b);
@@ -450,7 +450,7 @@ class OfflineRoutingEngine {
     }
     if (found == null) {
       throw OfflineRoutingException(
-          'No connected ${label.toLowerCase()} route to this building is available on permitted pathways.');
+          'No ${label.toLowerCase()} route to this building is available.');
     }
 
     final edges = <_Edge>[];
