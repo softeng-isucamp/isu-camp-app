@@ -13,6 +13,8 @@ class FakeDatabase:
     def __init__(self):
         self.users = [{'id': 11, 'username': 'Karl', 'info_id': 5},
                       {'id': 22, 'username': 'Another_User', 'info_id': 6}]
+        self.infos = [{'id': 5, 'email': 'karl@example.com', 'user_type': 'Student'},
+                      {'id': 6, 'email': 'other@example.com', 'user_type': 'Staff'}]
 
     def table(self, name):
         return FakeQuery(self, name)
@@ -33,7 +35,7 @@ class FakeQuery:
         self.payload = payload
         return self
     def execute(self):
-        rows = self.db.users if self.table == 'user' else [{'id': 5, 'email': 'karl@example.com'}, {'id': 6, 'email': 'other@example.com'}]
+        rows = self.db.users if self.table == 'user' else self.db.infos
         matches = [row for row in rows if all(test(row) for test in self.filters)]
         if self.payload:
             for row in matches: row.update(self.payload)
@@ -61,11 +63,31 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(self.client.patch('/profile', headers=self.headers, json={'username': 'NewName', 'email': 'evil@example.com'}).status_code, 422)
 
     def test_loads_real_email_and_updates_only_owner(self):
-        self.assertEqual(self.client.get('/profile', headers=self.headers).json(), {'username': 'Karl', 'email': 'karl@example.com'})
+        self.assertEqual(self.client.get('/profile', headers=self.headers).json(),
+                         {'username': 'Karl', 'email': 'karl@example.com', 'user_type': 'Student'})
         response = self.client.patch('/profile', headers=self.headers, json={'username': ' Karl_New '})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'username': 'Karl_New', 'email': 'karl@example.com'})
+        self.assertEqual(response.json(), {'username': 'Karl_New', 'email': 'karl@example.com', 'user_type': 'Student'})
         self.assertEqual(self.database.users[1]['username'], 'Another_User')
+
+    def test_account_type_can_be_changed_alone_or_with_username(self):
+        response = self.client.patch('/profile', headers=self.headers, json={'user_type': 'Visitor'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['user_type'], 'Visitor')
+        response = self.client.patch('/profile', headers=self.headers, json={'username': 'Karl2', 'user_type': 'Staff'})
+        self.assertEqual(response.json(), {'username': 'Karl2', 'email': 'karl@example.com', 'user_type': 'Staff'})
+        self.assertEqual(self.database.infos[0]['user_type'], 'Staff')
+        self.assertEqual(self.database.infos[1]['user_type'], 'Staff')
+
+    def test_invalid_account_type_and_empty_update_are_rejected(self):
+        for body in [{'user_type': 'Admin'}, {'user_type': 'student'}, {'user_type': ''}]:
+            self.assertEqual(self.client.patch('/profile', headers=self.headers, json=body).status_code, 422)
+        self.assertEqual(self.client.patch('/profile', headers=self.headers, json={}).status_code, 400)
+        self.assertEqual(self.database.infos[0]['user_type'], 'Student')
+
+    def test_older_account_without_type_loads_as_unset(self):
+        self.database.infos[0].pop('user_type')
+        self.assertIsNone(self.client.get('/profile', headers=self.headers).json()['user_type'])
 
     def test_invalid_and_duplicate_username_do_not_change_database(self):
         for value, status in [('ab', 400), ('Bad Name', 400), ('A' * 31, 400), ('another_user', 409)]:

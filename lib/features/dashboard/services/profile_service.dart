@@ -3,10 +3,24 @@ import 'package:http/http.dart' as http;
 import '../../auth/services/auth_service.dart';
 import '../../auth/services/user_session.dart';
 
+/// Account types a user can pick. Self-declared at signup and not verified.
+const accountTypes = ['Student', 'Staff', 'Visitor'];
+
 class AccountProfile {
-  const AccountProfile({required this.username, required this.email});
+  const AccountProfile(
+      {required this.username, required this.email, this.userType});
   final String username;
   final String email;
+
+  /// Null for older accounts that never chose a type.
+  final String? userType;
+
+  factory AccountProfile.fromJson(Map<String, dynamic> data) => AccountProfile(
+      username: data['username'] as String,
+      email: data['email'] as String,
+      userType: accountTypes.contains(data['user_type'])
+          ? data['user_type'] as String
+          : null);
 }
 
 class ProfileException implements Exception {
@@ -34,8 +48,7 @@ class ProfileService {
       throw ProfileException(data['detail'] is String
           ? data['detail']
           : 'Could not update your profile. Please try again.');
-    return AccountProfile(
-        username: data['username'] as String, email: data['email'] as String);
+    return AccountProfile.fromJson(data);
   }
 
   static Future<AccountProfile> load() async => _decode(await http
@@ -45,12 +58,17 @@ class ProfileService {
       )
       .timeout(const Duration(seconds: 15)));
 
-  static Future<AccountProfile> updateUsername(String username) async =>
+  /// Saves the username and, when chosen, the account type.
+  static Future<AccountProfile> update(
+          {required String username, String? userType}) async =>
       _decode(await http
           .patch(
             Uri.parse('${AuthService.baseUrl}/profile'),
             headers: _headers(),
-            body: jsonEncode({'username': username.trim()}),
+            body: jsonEncode({
+              'username': username.trim(),
+              if (userType != null) 'user_type': userType,
+            }),
           )
           .timeout(const Duration(seconds: 15)));
 

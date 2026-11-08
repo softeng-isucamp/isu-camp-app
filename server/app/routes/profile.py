@@ -1,4 +1,5 @@
 import re
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -14,9 +15,14 @@ from app.utils.session import current_user_id
 router = APIRouter(prefix='/profile', tags=['Profile'])
 
 
+UserType = Literal['Student', 'Staff', 'Visitor']
+
+
 class UpdateProfileRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    username: str
+    username: Optional[str] = None
+    # Self-declared at signup and not verified, so the owner may change it freely.
+    user_type: Optional[UserType] = None
 
 
 def read_profile(user_id: int):
@@ -24,16 +30,22 @@ def read_profile(user_id: int):
     if not user.data:
         raise HTTPException(404, 'User account not found.')
     row = user.data[0]
-    info = supabase.table('userInfo').select('email').eq('id', row['info_id']).execute()
+    info = supabase.table('userInfo').select('email, user_type').eq('id', row['info_id']).execute()
     if not info.data:
         raise HTTPException(404, 'User information not found.')
-    return {'username': row['username'], 'email': info.data[0]['email']}
+    # Older accounts may have no type saved; the app shows that as "Not set".
+    return {'username': row['username'], 'email': info.data[0]['email'],
+            'user_type': info.data[0].get('user_type'), 'info_id': row['info_id']}
+
+
+def _public(profile: dict):
+    return {key: profile[key] for key in ('username', 'email', 'user_type')}
 
 
 @router.get('')
 def get_profile(user_id: int = Depends(current_user_id)):
     try:
-        return read_profile(user_id)
+        return _public(read_profile(user_id))
     except HTTPException:
         raise
     except Exception:
@@ -42,29 +54,42 @@ def get_profile(user_id: int = Depends(current_user_id)):
 
 @router.patch('')
 def update_profile(data: UpdateProfileRequest, user_id: int = Depends(current_user_id)):
-    username = data.username.strip()
-    if not re.fullmatch(r'[A-Za-z0-9_]{3,30}', username):
+    if data.username is None and data.user_type is None:
+        raise HTTPException(400, 'Nothing to update.')
+    username = None if data.username is None else data.username.strip()
+    if username is not None and not re.fullmatch(r'[A-Za-z0-9_]{3,30}', username):
         raise HTTPException(400, 'Use 3–30 letters, numbers, or underscores for your username.')
     try:
         current = read_profile(user_id)
-        if current['username'] == username:
-            return current
-        # Case-insensitive duplicate checks; escaped underscore is literal in LIKE.
-        matches = supabase.table('user').select('id').ilike('username', username.replace('_', r'\_')).execute()
-        if any(row['id'] != user_id for row in matches.data):
-            raise HTTPException(409, 'Username is already taken.')
-        updated = supabase.table('user').update({'username': username}).eq('id', user_id).execute()
-        if not updated.data:
-            raise HTTPException(503, 'Could not save your username. Please try again.')
-        return dict(current, username=updated.data[0]['username'])
+        if username is not None and current['username'] != username:
+            current = _update_username(current, username, user_id)
+        if data.user_type is not None and current['user_type'] != data.user_type:
+            updated = supabase.table('userInfo').update(
+                {'user_type': data.user_type}).eq('id', current['info_id']).execute()
+            if not updated.data:
+                raise HTTPException(503, 'Could not save your account type. Please try again.')
+            current = dict(current, user_type=updated.data[0]['user_type'])
+        return _public(current)
     except HTTPException:
         raise
+    except Exception:
+        raise HTTPException(503, 'Could not save your profile. Please try again.') from None
+
+
+def _update_username(current: dict, username: str, user_id: int):
+    # Case-insensitive duplicate checks; escaped underscore is literal in LIKE.
+    matches = supabase.table('user').select('id').ilike('username', username.replace('_', r'\_')).execute()
+    if any(row['id'] != user_id for row in matches.data):
+        raise HTTPException(409, 'Username is already taken.')
+    try:
+        updated = supabase.table('user').update({'username': username}).eq('id', user_id).execute()
     except APIError as error:
         if error.code == '23505':
             raise HTTPException(409, 'Username is already taken.') from None
         raise HTTPException(503, 'Could not save your username. Please try again.') from None
-    except Exception:
-        raise HTTPException(503, 'Could not save your username. Please try again.') from None
+    if not updated.data:
+        raise HTTPException(503, 'Could not save your username. Please try again.')
+    return dict(current, username=updated.data[0]['username'])
 
 
 # ============================================================

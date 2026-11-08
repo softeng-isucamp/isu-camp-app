@@ -382,6 +382,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         token: response['access_token'] as String?,
         email: registeredEmail,
       );
+      UserSession.currentUserType = _selectedRole;
 
       try {
         await RememberedSessionStore.save(

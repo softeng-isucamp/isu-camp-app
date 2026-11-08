@@ -14,6 +14,7 @@ import '../data/campus_dataset.dart';
 import '../models/navigation_history.dart';
 import '../services/navigation_history_service.dart';
 import '../widgets/account_security_flows.dart';
+import '../services/profile_service.dart';
 import '../widgets/edit_profile_sheet.dart';
 import 'about_us_screen.dart';
 
@@ -34,6 +35,25 @@ class UserInfoScreen extends StatefulWidget {
 
 class _UserInfoScreenState extends State<UserInfoScreen> {
   bool _accountFlowRunning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccountType();
+  }
+
+  /// Fills in the account type for the header; the rest of the screen works without it.
+  Future<void> _loadAccountType() async {
+    final token = UserSession.accessToken;
+    if (token == null || token.isEmpty) return;
+    try {
+      final profile = await ProfileService.load();
+      if (!mounted || token != UserSession.accessToken) return;
+      setState(() => UserSession.currentUserType = profile.userType);
+    } catch (_) {
+      // Leave the header as it is; Edit Profile shows load errors.
+    }
+  }
 
   /// Runs one account flow at a time and refreshes the header afterwards.
   Future<void> _runAccountFlow(
@@ -209,6 +229,13 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                         color: Colors.white, size: 20)),
               ]),
             ),
+            if (UserSession.currentUserType != null)
+              Text(UserSession.currentUserType!,
+                  key: const ValueKey('profile_account_type_label'),
+                  style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white70)),
 
             const SizedBox(height: 28),
 
