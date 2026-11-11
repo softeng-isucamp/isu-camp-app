@@ -8,7 +8,12 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.database.supabase import supabase
+
 load_dotenv()
+DEACTIVATED_DETAIL = "This account has been deactivated. Please contact the ISU CAMP administrator."
+STATUS_UNAVAILABLE_DETAIL = "Could not check your account right now. Please try again."
+
 # This block lets current_user_id return a custom error when Bearer credentials are missing.
 bearer = HTTPBearer(auto_error=False)
 
@@ -42,6 +47,30 @@ def current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(b
         user_id = int(claims["sub"])
         if user_id <= 0:
             raise ValueError()
-        return user_id
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise HTTPException(401, "Your session has expired. Please log in again.") from None
+    ensure_account_active(user_id)
+    return user_id
+
+
+# The admin portal sets user.status to 'active' or 'inactive'. A missing or empty
+# status (older rows) counts as active; only an explicit 'inactive' is refused.
+def is_inactive(status) -> bool:
+    return isinstance(status, str) and status.strip().casefold() == "inactive"
+
+
+# This block builds the refusal the app recognises by its X-Account-Status header.
+def account_deactivated() -> HTTPException:
+    return HTTPException(403, DEACTIVATED_DETAIL, headers={"X-Account-Status": "inactive"})
+
+
+# This block reads the account status on every protected request so a
+# deactivation takes effect immediately. A failed lookup refuses the request.
+def ensure_account_active(user_id: int) -> None:
+    try:
+        result = supabase.table("user").select("status").eq("id", user_id).execute()
+        rows = result.data or []
+    except Exception:
+        raise HTTPException(503, STATUS_UNAVAILABLE_DETAIL) from None
+    if rows and is_inactive(rows[0].get("status")):
+        raise account_deactivated()

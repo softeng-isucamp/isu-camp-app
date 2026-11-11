@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routes import login, profile
-from app.utils import email as email_utils, otp_limits, passwords, pending_otp
+from app.utils import email as email_utils, otp_limits, passwords, pending_otp, session
 from app.utils.session import issue_session
 
 OLD_PASSWORD = 'OldPass1!'
@@ -87,7 +87,7 @@ class AccountChangeTests(unittest.TestCase):
         self.db = FakeDatabase()
         self.sent = []
         self.notices = []
-        for target in (profile, login, pending_otp):
+        for target in (profile, login, pending_otp, session):
             mock = patch.object(target, 'supabase', self.db)
             mock.start()
             self.addCleanup(mock.stop)

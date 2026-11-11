@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../auth/services/account_session.dart';
 import '../../auth/services/auth_service.dart';
 import '../../auth/services/user_session.dart';
 import '../models/navigation_history.dart';
@@ -16,7 +17,8 @@ class NavigationHistoryService {
     };
   }
 
-  static Map<String, dynamic> _decode(http.Response response) {
+  static Future<Map<String, dynamic>> _decode(http.Response response) async {
+    await AccountSession.checkResponse(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(data['detail'] is String
@@ -37,7 +39,7 @@ class NavigationHistoryService {
             headers: headers,
           )
           .timeout(const Duration(seconds: 20));
-      final page = _decode(response)['entries'] as List;
+      final page = (await _decode(response))['entries'] as List;
       entries.addAll(page.map((row) => NavigationHistoryEntry.fromJson(
           Map<String, dynamic>.from(row as Map))));
       if (page.length < 100) return entries;
@@ -56,7 +58,7 @@ class NavigationHistoryService {
               'locationId': roomId == null ? null : int.parse(roomId),
             }))
         .timeout(const Duration(seconds: 20));
-    _decode(response);
+    await _decode(response);
   }
 
   static Future<void> delete(String id) async {
@@ -66,7 +68,7 @@ class NavigationHistoryService {
                 '${AuthService.baseUrl}/history/${Uri.encodeComponent(id)}'),
             headers: _headers())
         .timeout(const Duration(seconds: 20));
-    _decode(response);
+    await _decode(response);
   }
 
   static Future<void> clear() async {
@@ -74,6 +76,6 @@ class NavigationHistoryService {
         .delete(Uri.parse('${AuthService.baseUrl}/history'),
             headers: _headers())
         .timeout(const Duration(seconds: 20));
-    _decode(response);
+    await _decode(response);
   }
 }

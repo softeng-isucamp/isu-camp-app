@@ -29,6 +29,7 @@ app.add_middleware(
         "Retry-After",
         "X-Login-Attempts",
         "X-Login-Attempts-Remaining",
+        "X-Account-Status",
     ],
 )
 

@@ -10,7 +10,8 @@ from app.database.supabase import supabase
 from app.utils.email import mask_email
 from app.utils.passwords import ensure_different_password, validate_new_password
 from app.utils.pending_otp import delete_pending, issue_code, require_verified, verify_code
-from app.utils.session import issue_session
+from app.utils.session import (STATUS_UNAVAILABLE_DETAIL, account_deactivated,
+                               is_inactive, issue_session)
 from app.utils.captcha import verify_captcha
 
 
@@ -190,13 +191,16 @@ def login(data: LoginRequest):
     # GET USER
     # ======================================
 
-    user_result = (
-        supabase
-        .table("user")
-        .select("id, username, info_id")
-        .eq("info_id", user_info["id"])
-        .execute()
-    )
+    try:
+        user_result = (
+            supabase
+            .table("user")
+            .select("id, username, info_id, status")
+            .eq("info_id", user_info["id"])
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail=STATUS_UNAVAILABLE_DETAIL) from None
 
     if not user_result.data:
         raise HTTPException(
@@ -204,9 +208,14 @@ def login(data: LoginRequest):
             detail="User account not found."
         )
 
-    _clear_login_attempts(identifier)
-
     user = user_result.data[0]
+
+    # Checked only after the password is correct, so the deactivation notice never
+    # reveals anything to someone guessing. It does not count toward the lockout.
+    if is_inactive(user.get("status")):
+        raise account_deactivated()
+
+    _clear_login_attempts(identifier)
 
     # ======================================
     # SUCCESS
@@ -250,6 +259,12 @@ class ResetPasswordRequest(BaseModel):
 # HELPER: FIND USER USING USERNAME OR EMAIL
 # ============================================================
 
+# A deactivated account gets exactly this response too, so recovery cannot be
+# used to confirm it exists and no reset code is sent.
+def _account_not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail="Account not found.")
+
+
 # This block finds linked user/userInfo records and returns the email used for account recovery.
 def get_user_by_identifier(identifier: str):
 
@@ -270,17 +285,14 @@ def get_user_by_identifier(identifier: str):
         )
 
         if not info_result.data:
-            raise HTTPException(
-                status_code=404,
-                detail="Account not found."
-            )
+            raise _account_not_found()
 
         user_info = info_result.data[0]
 
         user_result = (
             supabase
             .table("user")
-            .select("id, username, info_id")
+            .select("id, username, info_id, status")
             .eq("info_id", user_info["id"])
             .execute()
         )
@@ -292,6 +304,8 @@ def get_user_by_identifier(identifier: str):
             )
 
         user = user_result.data[0]
+        if is_inactive(user.get("status")):
+            raise _account_not_found()
 
         return {
             "email": user_info["email"],
@@ -306,16 +320,13 @@ def get_user_by_identifier(identifier: str):
     user_result = (
         supabase
         .table("user")
-        .select("id, username, info_id")
+        .select("id, username, info_id, status")
         .eq("username", identifier)
         .execute()
     )
 
-    if not user_result.data:
-        raise HTTPException(
-            status_code=404,
-            detail="Account not found."
-        )
+    if not user_result.data or is_inactive(user_result.data[0].get("status")):
+        raise _account_not_found()
 
     user = user_result.data[0]
 

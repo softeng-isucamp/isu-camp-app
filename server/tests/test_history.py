@@ -8,6 +8,7 @@ import jwt
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.routes import history
+from app.utils import session
 from app.utils.session import issue_session
 
 
@@ -44,7 +45,9 @@ class FakeQuery:
         return self
 
     def execute(self):
-        if self.name == "building":
+        if self.name == "user":
+            source = [{"id": 11, "status": "active"}, {"id": 22, "status": "active"}]
+        elif self.name == "building":
             source = [{"building_id": 8}]
         elif self.name == "location":
             source = [{"location_id": 9, "building_id": 8},
@@ -70,9 +73,10 @@ class HistoryTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         self.db = FakeDatabase()
-        db_patch = patch.object(history, "supabase", self.db)
-        db_patch.start()
-        self.addCleanup(db_patch.stop)
+        for target in (history, session):
+            db_patch = patch.object(target, "supabase", self.db)
+            db_patch.start()
+            self.addCleanup(db_patch.stop)
         app = FastAPI()
         app.include_router(history.router)
         self.client = TestClient(app)
