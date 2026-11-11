@@ -17,7 +17,10 @@ import '../services/verification_security_controller.dart';
 import '../../onboarding/screens/welcome_greeting_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.initialMessage});
+
+  /// Shown once when the screen opens, for example after a deactivation.
+  final String? initialMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -51,6 +54,12 @@ class _LoginScreenState extends State<LoginScreen> {
     _forgotSecurity = VerificationSecurityController(
       onTimeout: _handleForgotPasswordTimeout,
     );
+    final message = widget.initialMessage;
+    if (message != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showSnackBar(message, Colors.redAccent, long: true);
+      });
+    }
   }
 
   void _handleForgotPasswordTimeout(VerificationTimeoutReason reason) {
@@ -216,11 +225,12 @@ class _LoginScreenState extends State<LoginScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
-  void _showSnackBar(String message, Color color) {
+  void _showSnackBar(String message, Color color, {bool long = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
           content: Text(message, style: GoogleFonts.montserrat()),
-          backgroundColor: color),
+          backgroundColor: color,
+          duration: Duration(seconds: long ? 10 : 4)),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../auth/services/account_session.dart';
 import '../../auth/services/auth_service.dart';
 import '../../auth/services/user_session.dart';
 
@@ -42,7 +43,8 @@ class ProfileService {
     };
   }
 
-  static AccountProfile _decode(http.Response response) {
+  static Future<AccountProfile> _decode(http.Response response) async {
+    await AccountSession.checkResponse(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200)
       throw ProfileException(data['detail'] is String
@@ -84,6 +86,7 @@ class ProfileService {
           body: body == null ? null : jsonEncode(body),
         )
         .timeout(const Duration(seconds: 20));
+    await AccountSession.checkResponse(response);
     dynamic data;
     try {
       data = jsonDecode(response.body);

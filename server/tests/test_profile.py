@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.routes import profile
+from app.utils import session
 from app.utils.session import issue_session
 
 
@@ -48,9 +49,10 @@ class ProfileTests(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         self.database = FakeDatabase()
-        mock = patch.object(profile, 'supabase', self.database)
-        mock.start()
-        self.addCleanup(mock.stop)
+        for target in (profile, session):
+            mock = patch.object(target, 'supabase', self.database)
+            mock.start()
+            self.addCleanup(mock.stop)
         app = FastAPI()
         app.include_router(profile.router)
         self.client = TestClient(app)

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'features/auth/screens/get_started_screen.dart';
-import 'features/auth/services/remembered_session_store.dart';
+import 'features/auth/screens/login_screen.dart';
+import 'features/auth/services/account_session.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
 import 'features/offline/services/offline_pack_service.dart';
 
@@ -39,16 +40,20 @@ class MyApp extends StatelessWidget {
       title: 'KUMPAS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true),
-      home: FutureBuilder<bool>(
-        future: RememberedSessionStore.restore(),
+      navigatorKey: AccountSession.navigatorKey,
+      home: FutureBuilder<LaunchSession>(
+        future: AccountSession.restoreOnLaunch(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Scaffold(
                 body: Center(child: CircularProgressIndicator()));
           }
-          return snapshot.data!
-              ? const DashboardScreen()
-              : const GetStartedScreen();
+          return switch (snapshot.data!) {
+            LaunchSession.signedIn => const DashboardScreen(),
+            LaunchSession.signedOut => const GetStartedScreen(),
+            LaunchSession.deactivated => const LoginScreen(
+                initialMessage: AccountSession.deactivatedMessage),
+          };
         },
       ),
     );
