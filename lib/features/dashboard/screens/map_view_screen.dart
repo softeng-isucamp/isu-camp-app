@@ -1,3 +1,5 @@
+import 'package:isu_camp_app/core/app_motion.dart';
+import 'package:isu_camp_app/core/app_theme.dart';
 import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -28,6 +30,9 @@ import '../services/navigation_history_service.dart';
 import '../widgets/location_puck.dart';
 import '../widgets/navigation_sheets.dart';
 import 'user_info_screen.dart';
+
+// Header rows: 48 + 48 + 48, with padding and gaps. Keep overlays below it.
+const double _mapHeaderHeight = 190;
 
 const Color navigationRouteBlue = Color(0xFF2563EB);
 const double _initialCampusZoom = 16.8;
@@ -756,8 +761,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
       if (!mounted || UserSession.accessToken != token) return;
       if (_historySessionId == sessionId) _historySessionId = null;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              ErrorMessages.present(error, 'Could not save your navigation history.'))));
+          content: Text(ErrorMessages.present(
+              error, 'Could not save your navigation history.'))));
     });
   }
 
@@ -1283,9 +1288,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final items = <SearchResultItem>[];
     final seenKeys = <String>{};
 
-    void addItem(CampusBuilding building, {CampusRoom? room, bool isRelated = false}) {
+    void addItem(CampusBuilding building,
+        {CampusRoom? room, bool isRelated = false}) {
       if (!_matchesCategoryFilter(building, _selectedCategoryFilter)) return;
-      final key = room == null ? 'b:${building.id}' : 'r:${building.id}:${room.id}';
+      final key =
+          room == null ? 'b:${building.id}' : 'r:${building.id}:${room.id}';
       if (seenKeys.add(key)) {
         items.add(SearchResultItem(
           building: building,
@@ -1408,7 +1415,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
       }
 
       for (final building in isuCampusBuildings) {
-        if (relatedCategories.contains(building.category.trim().toLowerCase())) {
+        if (relatedCategories
+            .contains(building.category.trim().toLowerCase())) {
           addItem(building, isRelated: true);
         }
       }
@@ -1417,7 +1425,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
     return items;
   }
 
-  void _selectBuildingAndShowDetails(CampusBuilding building, {CampusRoom? room}) {
+  void _selectBuildingAndShowDetails(CampusBuilding building,
+      {CampusRoom? room}) {
     setState(() {
       _selectedBuilding = building;
       _selectedRoom = room;
@@ -1485,14 +1494,18 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   List<SmartSearchResult> _getSmartSearchResults() {
     return CampusSearch.search(isuCampusBuildings, _searchController.text,
-        origin: _currentUserLocation)
-        .where((r) => _matchesCategoryFilter(r.building, _selectedCategoryFilter))
-        .map((r) => SmartSearchResult(building: r.building,
-            matchedRooms: r.room == null ? [] : [r.room!], isDirectMatch: true))
+            origin: _currentUserLocation)
+        .where(
+            (r) => _matchesCategoryFilter(r.building, _selectedCategoryFilter))
+        .map((r) => SmartSearchResult(
+            building: r.building,
+            matchedRooms: r.room == null ? [] : [r.room!],
+            isDirectMatch: true))
         .toList();
   }
 
-  Future<void> _openSearchLocation(CampusBuilding building, {CampusRoom? room}) async {
+  Future<void> _openSearchLocation(CampusBuilding building,
+      {CampusRoom? room}) async {
     _searchController.clear();
     _searchFocusNode.unfocus();
     setState(() {
@@ -1503,8 +1516,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
       _navigationState = NavigationUiState.idle;
     });
     _mapController.move(room?.coordinate ?? building.coordinate, 18);
-    final navigate = await showDialog<bool>(context: context,
-        builder: (_) => IndoorLocationDetailsDialog(building: building, room: room));
+    final navigate = await showDialog<bool>(
+        context: context,
+        builder: (_) =>
+            IndoorLocationDetailsDialog(building: building, room: room));
     if (!mounted || navigate != true) return;
     _selectBuildingAndShowDetails(building, room: room);
     setState(() {
@@ -1539,46 +1554,39 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
   Widget _buildFilterChip(String label, IconData icon) {
     final isSelected = _selectedCategoryFilter == label;
-    return GestureDetector(
-      onTap: () {
-        _searchFocusNode.unfocus();
-        setState(() {
-          if (_selectedCategoryFilter == label && label != 'All') {
-            _selectedCategoryFilter = 'All';
-          } else {
-            _selectedCategoryFilter = label;
-          }
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFECC700) : const Color(0xFF174A2F),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFECC700) : Colors.white24,
-          ),
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        key: ValueKey('category-$label'),
+        selected: isSelected,
+        showCheckmark: false,
+        avatar: Icon(icon,
+            size: 14, color: isSelected ? Colors.black87 : Colors.white),
+        label: Text(label),
+        labelStyle: GoogleFonts.montserrat(
+          fontSize: 11.5,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: isSelected ? Colors.black87 : Colors.white,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 14,
-              color: isSelected ? Colors.black87 : Colors.white,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.montserrat(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.black87 : Colors.white,
-              ),
-            ),
-          ],
+        selectedColor: AppTheme.gold,
+        backgroundColor: const Color(0xFF174A2F),
+        side: BorderSide(color: isSelected ? AppTheme.gold : Colors.white24),
+        shape: const StadiumBorder(),
+        materialTapTargetSize: MaterialTapTargetSize.padded,
+        visualDensity: VisualDensity.standard,
+        chipAnimationStyle: ChipAnimationStyle(
+          selectAnimation: AnimationStyle(
+              duration: AppMotion.duration(context, AppMotion.quick)),
+          enableAnimation: AnimationStyle(
+              duration: AppMotion.duration(context, AppMotion.quick)),
         ),
+        onSelected: (_) {
+          _searchFocusNode.unfocus();
+          setState(() {
+            _selectedCategoryFilter =
+                isSelected && label != 'All' ? 'All' : label;
+          });
+        },
       ),
     );
   }
@@ -1590,7 +1598,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final suggestedBuildings = _getSuggestedBuildings();
 
     return Positioned(
-      top: topPadding + 155,
+      top: topPadding + _mapHeaderHeight + 8,
       left: 16,
       right: 16,
       child: Material(
@@ -1625,7 +1633,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
         // Suggested header with icon
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-          child: Row(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(5),
@@ -1639,7 +1650,6 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   color: Color(0xFF0F751B),
                 ),
               ),
-              const SizedBox(width: 8),
               Text(
                 'SUGGESTED FOR YOU',
                 style: GoogleFonts.montserrat(
@@ -1649,7 +1659,6 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   letterSpacing: 0.5,
                 ),
               ),
-              const Spacer(),
               Text(
                 'Campus Highlights',
                 style: GoogleFonts.montserrat(
@@ -1663,7 +1672,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
         ),
 
         if (suggestedBuildings.isEmpty)
-          Padding(
+          Flexible(
+              child: SingleChildScrollView(
+                  child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             child: Center(
               child: Text(
@@ -1675,7 +1686,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 ),
               ),
             ),
-          )
+          )))
         else
           Flexible(
             child: ListView.separated(
@@ -1779,7 +1790,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   Widget _buildSmartResultsContent(
       String query, List<SmartSearchResult> smartResults) {
     if (smartResults.isEmpty) {
-      return Padding(
+      return SingleChildScrollView(
+          child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1806,7 +1818,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
             ),
           ],
         ),
-      );
+      ));
     }
 
     return Column(
@@ -1876,7 +1888,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F751B).withValues(alpha: 0.1),
+                              color: const Color(0xFF0F751B)
+                                  .withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -1904,7 +1917,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     onTap: () {
                       _searchController.clear();
                       _searchFocusNode.unfocus();
-                      _openSearchLocation(bldg, room: result.matchedRooms.firstOrNull);
+                      _openSearchLocation(bldg,
+                          room: result.matchedRooms.firstOrNull);
                     },
                   ),
                   if (result.matchedRooms.isNotEmpty)
@@ -2085,7 +2099,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     rotate: true,
                     markers: mapBuildings.map((building) {
                       final isSelected = _selectedBuilding?.id == building.id;
-                      final markerStyle = _markerStyleForCurrentFilter(building);
+                      final markerStyle =
+                          _markerStyleForCurrentFilter(building);
                       final opacity =
                           buildingIconOpacity(zoom, isSelected: isSelected);
                       return Marker(
@@ -2100,7 +2115,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             child: AnimatedOpacity(
                               key: ValueKey('building-icon-${building.id}'),
                               opacity: opacity,
-                              duration: const Duration(milliseconds: 180),
+                              duration:
+                                  AppMotion.duration(context, AppMotion.quick),
                               curve: Curves.easeOut,
                               child: Semantics(
                                 button: true,
@@ -2112,8 +2128,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                         _selectBuildingAndShowDetails(building),
                                     child: Center(
                                       child: AnimatedContainer(
-                                        duration:
-                                            const Duration(milliseconds: 220),
+                                        duration: AppMotion.duration(
+                                            context, AppMotion.sheet),
                                         width: isSelected ? 32 : 28,
                                         height: isSelected ? 32 : 28,
                                         decoration: BoxDecoration(
@@ -2173,7 +2189,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                             child: AnimatedOpacity(
                               key: ValueKey('building-label-${building.id}'),
                               opacity: buildingLabelOpacity(zoom),
-                              duration: const Duration(milliseconds: 180),
+                              duration:
+                                  AppMotion.duration(context, AppMotion.quick),
                               curve: Curves.easeOut,
                               child: Transform.translate(
                                 // Keep the label below the entire icon, not
@@ -2428,7 +2445,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
             Positioned(
               key: const ValueKey('map-action-buttons'),
               right: 16,
-              top: topPadding + 170,
+              top: topPadding + _mapHeaderHeight + 12,
               child: Column(
                 children: [
                   // Recenter to ISU Echague Main Gate
@@ -2515,7 +2532,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
+                        Expanded(
+                            child: Row(
                           children: [
                             SizedBox(
                               width: 28,
@@ -2534,21 +2552,25 @@ class _MapViewScreenState extends State<MapViewScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
+                            Flexible(
+                                child: Text(
                               'KUMPAS',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.montserrat(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.6,
                                 color: Colors.white,
                               ),
-                            ),
+                            )),
                           ],
-                        ),
+                        )),
                         Row(
                           children: [
-                            GestureDetector(
-                              onTap: () async {
+                            IconButton(
+                              tooltip: 'Open profile',
+                              onPressed: () async {
                                 await _historyWriteQueue;
                                 if (!context.mounted) return;
                                 Navigator.push(
@@ -2579,22 +2601,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                   ),
                                 );
                               },
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF174A2F),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white24,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: const Icon(
-                                  Icons.person_outline,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
+                              style: IconButton.styleFrom(
+                                minimumSize: const Size(48, 48),
+                                backgroundColor: const Color(0xFF174A2F),
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white24),
                               ),
+                              icon: const Icon(Icons.person_outline, size: 22),
                             ),
                             const SizedBox(width: 10),
                             SizedBox(
@@ -2622,24 +2635,26 @@ class _MapViewScreenState extends State<MapViewScreen> {
 
                     // Search Field Bar
                     Container(
-                      height: 42,
+                      height: 48,
                       decoration: BoxDecoration(
                         color: const Color(0xFF174A2F),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: EdgeInsets.zero,
                       child: Row(
                         children: [
-                          GestureDetector(
-                            onTap: () =>
+                          IconButton(
+                            tooltip: 'Search campus',
+                            constraints: const BoxConstraints(
+                                minWidth: 48, minHeight: 48),
+                            onPressed: () =>
                                 _handleSearchSubmitted(_searchController.text),
-                            child: const Icon(
+                            icon: const Icon(
                               Icons.search,
                               color: Colors.white70,
                               size: 20,
                             ),
                           ),
-                          const SizedBox(width: 8),
                           Expanded(
                             child: TextField(
                               controller: _searchController,
@@ -2670,8 +2685,11 @@ class _MapViewScreenState extends State<MapViewScreen> {
                           ),
                           if (_searchController.text.isNotEmpty ||
                               _searchFocusNode.hasFocus)
-                            GestureDetector(
-                              onTap: () {
+                            IconButton(
+                              tooltip: 'Clear search',
+                              constraints: const BoxConstraints(
+                                  minWidth: 48, minHeight: 48),
+                              onPressed: () {
                                 _searchController.clear();
                                 _searchFocusNode.unfocus();
                                 setState(() {
@@ -2681,7 +2699,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                   }
                                 });
                               },
-                              child: const Icon(
+                              icon: const Icon(
                                 Icons.close,
                                 color: Colors.white70,
                                 size: 18,
@@ -2728,7 +2746,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
               !_isNavigationActive &&
               _navigationState != NavigationUiState.chooseRoute)
             Positioned(
-              top: topPadding + 170,
+              top: topPadding + _mapHeaderHeight + 12,
               left: 16,
               right: 76,
               child: Material(

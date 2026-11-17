@@ -1,3 +1,5 @@
+import 'package:isu_camp_app/core/app_motion.dart';
+import 'package:isu_camp_app/core/widgets/app_pressable.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:isu_camp_app/features/dashboard/screens/dashboard_screen.dart';
@@ -22,7 +24,7 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
   late final Animation<double> _buttonFade;
   late final Animation<double> _buttonScale;
 
-  late final AnimationController _ambientController;
+  bool _started = false;
   late final Animation<double> _ambientPulse;
 
   @override
@@ -31,7 +33,7 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
 
     _handwritingController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 900),
     );
     _strokeProgress = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -42,7 +44,7 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
 
     _uiController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: AppMotion.entrance,
     );
 
     _nameFade = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -59,37 +61,29 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
       ),
     );
 
-    _buttonFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _uiController,
-        curve: const Interval(0.40, 1.0, curve: Curves.easeIn),
-      ),
-    );
-    _buttonScale = Tween<double>(begin: 0.88, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _uiController,
-        curve: const Interval(0.40, 1.0, curve: Curves.easeOutBack),
-      ),
-    );
+    _buttonFade = const AlwaysStoppedAnimation(1);
+    _buttonScale = const AlwaysStoppedAnimation(1);
+    _ambientPulse = const AlwaysStoppedAnimation(0.7);
+  }
 
-    _ambientController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
-    _ambientPulse = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _ambientController, curve: Curves.easeInOut),
-    );
-
-    _handwritingController.forward().then((_) {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduced(context)) {
+      _handwritingController.value = 1;
+      _uiController.value = 1;
+    } else if (!_started) {
+      // Decoration and greeting run together; the map action is already usable.
+      _handwritingController.forward();
       _uiController.forward();
-    });
+    }
+    _started = true;
   }
 
   @override
   void dispose() {
     _handwritingController.dispose();
     _uiController.dispose();
-    _ambientController.dispose();
     super.dispose();
   }
 
@@ -100,11 +94,12 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
             const DashboardScreen(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+            opacity:
+                CurvedAnimation(parent: animation, curve: Curves.easeInOut),
             child: child,
           );
         },
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionDuration: AppMotion.duration(context, AppMotion.entrance),
       ),
     );
   }
@@ -143,12 +138,14 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFC5A059).withValues(alpha: 0.08),
+                          color:
+                              const Color(0xFFC5A059).withValues(alpha: 0.08),
                           blurRadius: 120,
                           spreadRadius: 40,
                         ),
                         BoxShadow(
-                          color: const Color(0xFF0F751B).withValues(alpha: 0.15),
+                          color:
+                              const Color(0xFF0F751B).withValues(alpha: 0.15),
                           blurRadius: 150,
                           spreadRadius: 60,
                         ),
@@ -159,193 +156,209 @@ class _WelcomeGreetingScreenState extends State<WelcomeGreetingScreen>
               },
             ),
             SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28.0,
-                  vertical: 20.0,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28.0,
+                      vertical: 20.0,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: ClipOval(
-                            child: Image.asset(
-                              'assets/images/logo_kumpas_app.webp',
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(
-                                Icons.navigation,
-                                color: Color(0xFFC5A059),
-                                size: 24,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: ClipOval(
+                                child: Image.asset(
+                                  'assets/images/logo_kumpas_app.webp',
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(
+                                    Icons.navigation,
+                                    color: Color(0xFFC5A059),
+                                    size: 24,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'KUMPAS',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                            color: Colors.white.withValues(alpha: .9),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 280,
-                          height: 140,
-                          child: AnimatedBuilder(
-                            animation: _strokeProgress,
-                            builder: (context, child) {
-                              return CustomPaint(
-                                painter: AppleCursiveHelloPainter(
-                                  progress: _strokeProgress.value,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FadeTransition(
-                          opacity: _nameFade,
-                          child: SlideTransition(
-                            position: _nameSlide,
-                            child: Column(
-                              children: [
-                                Text(
-                                  widget.userName,
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.merriweather(
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: .08),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: const Color(0xFFC5A059).withValues(alpha: .4),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Welcome to Echague Campus',
-                                    style: GoogleFonts.montserrat(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFFE2E8F0),
-                                      letterSpacing: 0.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: 8),
+                            Text(
+                              'KUMPAS',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.2,
+                                color: Colors.white.withValues(alpha: .9),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                    Column(
-                      children: [
-                        FadeTransition(
-                          opacity: _buttonFade,
-                          child: ScaleTransition(
-                            scale: _buttonScale,
-                            child: GestureDetector(
-                              onTap: _handleProceed,
-                              child: Container(
-                                width: double.infinity,
-                                height: 56,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(28),
-                                  border: Border.all(
-                                    color: const Color(0xFFC5A059),
-                                    width: 1.5,
-                                  ),
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xFF385E2B),
-                                      Color(0xFF0F3B1A),
-                                    ],
-                                  ),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Colors.black45,
-                                      blurRadius: 14,
-                                      offset: Offset(0, 6),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 280,
+                              height: 140,
+                              child: AnimatedBuilder(
+                                animation: _strokeProgress,
+                                builder: (context, child) {
+                                  return CustomPaint(
+                                    painter: AppleCursiveHelloPainter(
+                                      progress: _strokeProgress.value,
                                     ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            FadeTransition(
+                              opacity: _nameFade,
+                              child: SlideTransition(
+                                position: _nameSlide,
+                                child: Column(
                                   children: [
                                     Text(
-                                      'Proceed to Campus Map',
-                                      style: GoogleFonts.montserrat(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 0.8,
+                                      widget.userName,
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.merriweather(
+                                        fontSize: 30,
+                                        fontWeight: FontWeight.w900,
                                         color: Colors.white,
+                                        letterSpacing: 0.5,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    const Icon(
-                                      Icons.arrow_forward_rounded,
-                                      color: Color(0xFFC5A059),
-                                      size: 20,
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.white.withValues(alpha: .08),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: const Color(0xFFC5A059)
+                                              .withValues(alpha: .4),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Welcome to Echague Campus',
+                                        style: GoogleFonts.montserrat(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFFE2E8F0),
+                                          letterSpacing: 0.4,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        FadeTransition(
-                          opacity: _buttonFade,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.shield_outlined,
-                                color: Colors.white70,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Isabela State University - Echague',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white70,
+                        Column(
+                          children: [
+                            FadeTransition(
+                              opacity: _buttonFade,
+                              child: ScaleTransition(
+                                scale: _buttonScale,
+                                child: AppPressable(
+                                  onPressed: _handleProceed,
+                                  child: Container(
+                                    width: double.infinity,
+                                    constraints:
+                                        const BoxConstraints(minHeight: 56),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(28),
+                                      border: Border.all(
+                                        color: const Color(0xFFC5A059),
+                                        width: 1.5,
+                                      ),
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xFF385E2B),
+                                          Color(0xFF0F3B1A),
+                                        ],
+                                      ),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black45,
+                                          blurRadius: 14,
+                                          offset: Offset(0, 6),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Flexible(
+                                            child: Text(
+                                          'Proceed to Campus Map',
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.montserrat(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.8,
+                                            color: Colors.white,
+                                          ),
+                                        )),
+                                        const SizedBox(width: 8),
+                                        const Icon(
+                                          Icons.arrow_forward_rounded,
+                                          color: Color(0xFFC5A059),
+                                          size: 20,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 16),
+                            FadeTransition(
+                              opacity: _buttonFade,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.shield_outlined,
+                                    color: Colors.white70,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                      child: Text(
+                                    'Isabela State University - Echague',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white70,
+                                    ),
+                                  )),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                )),
               ),
             ),
           ],

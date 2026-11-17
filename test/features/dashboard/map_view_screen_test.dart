@@ -1,3 +1,4 @@
+import 'dart:ui' show Tristate;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -149,7 +150,7 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('All'), findsOneWidget);
     expect(find.byIcon(Icons.person_outline), findsOneWidget);
-    await tester.tap(find.text('All'));
+    await tester.tap(find.byKey(const ValueKey('category-All')));
     await tester.pump();
     await tester.tap(find.byIcon(Icons.person_outline));
     await tester.pump();
@@ -162,5 +163,69 @@ void main() {
     expect(find.byIcon(Icons.person_outline), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets('map header has accessible controls at twice the text size',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final semantics = tester.ensureSemantics();
+    final bytes = File('assets/images/logo_isu.webp').readAsBytesSync();
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: const MapViewScreen(),
+      ));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+      for (final label in ['Open profile', 'Search campus']) {
+        expect(tester.getSize(find.byTooltip(label)).shortestSide,
+            greaterThanOrEqualTo(48));
+      }
+      final all = find.byKey(const ValueKey('category-All'));
+      final college = find.byKey(const ValueKey('category-College'));
+      expect(
+          tester
+                  .getSemantics(all)
+                  .getSemanticsData()
+                  .flagsCollection
+                  .isSelected ==
+              Tristate.isTrue,
+          isTrue);
+      await tester.tap(college);
+      await tester.pump();
+      expect(
+          tester
+                  .getSemantics(college)
+                  .getSemanticsData()
+                  .flagsCollection
+                  .isSelected ==
+              Tristate.isTrue,
+          isTrue);
+      expect(
+          tester
+                  .getSemantics(all)
+                  .getSemanticsData()
+                  .flagsCollection
+                  .isSelected ==
+              Tristate.isTrue,
+          isFalse);
+      await tester.tap(find.byType(TextField));
+      await tester.enterText(find.byType(TextField), 'test');
+      await tester.pump();
+      expect(tester.getSize(find.byTooltip('Clear search')).shortestSide,
+          greaterThanOrEqualTo(48));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async =>
+            request.url.path == '/campus/buildings'
+                ? http.Response('{"buildings":[]}', 200)
+                : http.Response.bytes(bytes, 200,
+                    headers: {'content-type': 'image/png'})));
+    semantics.dispose();
   });
 }

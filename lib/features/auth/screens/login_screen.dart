@@ -545,6 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           IconButton(
+                            tooltip: 'Login help',
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -552,8 +553,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             icon: const Icon(Icons.help_outline,
                                 color: Colors.black87, size: 26),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                            constraints: const BoxConstraints(
+                                minWidth: 48, minHeight: 48),
                           ),
                         ],
                       ),
@@ -610,6 +611,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           hintStyle: GoogleFonts.montserrat(
                               color: Colors.grey.shade400, fontSize: 14),
                           suffixIcon: IconButton(
+                            tooltip: _isPasswordVisible
+                                ? 'Hide password'
+                                : 'Show password',
                             icon: Icon(
                                 _isPasswordVisible
                                     ? Icons.visibility

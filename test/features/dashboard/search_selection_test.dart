@@ -97,6 +97,12 @@ void main() {
       Finder inSheet(Finder f) =>
           find.descendant(of: find.byType(SearchResultsSheet), matching: f);
       expect(inSheet(find.text('Administration Building')), findsOneWidget);
+      await tester.scrollUntilVisible(
+        inSheet(find.text('Administration Parking')),
+        150,
+        scrollable: inSheet(find.byType(Scrollable)).last,
+      );
+      await tester.pumpAndSettle();
       expect(inSheet(find.text('Administration Parking')), findsOneWidget);
       expect(inSheet(find.text('DIRECTIONS')), findsWidgets);
 
