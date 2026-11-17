@@ -1,3 +1,4 @@
+import 'dart:ui' show CheckedState;
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -54,8 +55,42 @@ void main() {
       ))));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('100 m'), findsOneWidget);
-      expect(find.text('150 m'), findsOneWidget);
+      expect(find.textContaining('Distance: 100 m', findRichText: true),
+          findsOneWidget);
+      expect(find.textContaining('Distance: 150 m', findRichText: true),
+          findsOneWidget);
+      final semantics = tester.ensureSemantics();
+      for (final mode in ['Car', 'Motorcycle', 'Bicycle', 'Walking']) {
+        expect(tester.getSize(find.byTooltip(mode)).shortestSide,
+            greaterThanOrEqualTo(48));
+      }
+      expect(
+          tester
+              .getSemantics(find.text('Shaded Path'))
+              .getSemanticsData()
+              .flagsCollection
+              .isChecked,
+          CheckedState.isTrue);
+      await tester.tap(find.text('Shortest Route'));
+      await tester.pump();
+      expect(
+          tester
+              .getSemantics(find.text('Shortest Route'))
+              .getSemanticsData()
+              .flagsCollection
+              .isChecked,
+          CheckedState.isTrue);
+      expect(
+          tester
+              .getSemantics(find.text('Shaded Path'))
+              .getSemanticsData()
+              .flagsCollection
+              .isChecked,
+          CheckedState.isFalse);
+      await tester.tap(find.text('Shaded Path'));
+      await tester.pump();
+      semantics.dispose();
+
       await tester.ensureVisible(find.text('View Route'));
       await tester.pump();
       await tester.tap(find.text('View Route'));
@@ -209,7 +244,8 @@ void main() {
           onViewRoute: (_, __) => fail('No route must not navigate'),
         ))));
         await tester.pump();
-        expect(find.text('Could not find a route. Please try again.'), findsOneWidget);
+        expect(find.text('Could not find a route. Please try again.'),
+            findsOneWidget);
         expect(
             tester
                 .widget<ElevatedButton>(

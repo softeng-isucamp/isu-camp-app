@@ -811,15 +811,16 @@ class _RegisterScreenState extends State<RegisterScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Sign up',
-                style: GoogleFonts.merriweather(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F4D20),
-                ),
+              Flexible(
+                child: Text('Sign up',
+                    style: GoogleFonts.merriweather(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF0F4D20),
+                    )),
               ),
               IconButton(
+                tooltip: 'Registration help',
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -834,7 +835,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   size: 26,
                 ),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               ),
             ],
           ),
@@ -905,8 +906,10 @@ class _RegisterScreenState extends State<RegisterScreen>
           DropdownButtonFormField<String>(
             key: const ValueKey('signup_role_selector'),
             initialValue: _selectedRole,
+            isExpanded: true,
             hint: Text(
-              'Select account type',
+              'Select',
+              semanticsLabel: 'Select account type',
               style: GoogleFonts.montserrat(
                 color: Colors.grey.shade400,
                 fontSize: 13.5,
@@ -1001,9 +1004,9 @@ class _RegisterScreenState extends State<RegisterScreen>
           const SizedBox(height: 20),
 
           // Continue Button
-          SizedBox(
+          Container(
             width: double.infinity,
-            height: 48,
+            constraints: const BoxConstraints(minHeight: 48),
             child: ElevatedButton(
               onPressed: _isRequestingCode ? null : _handleStep1Continue,
               style: ElevatedButton.styleFrom(
@@ -1058,6 +1061,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                 ),
               ),
               IconButton(
+                tooltip: 'Registration help',
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -1072,7 +1076,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   size: 26,
                 ),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               ),
             ],
           ),
@@ -1197,15 +1201,16 @@ class _RegisterScreenState extends State<RegisterScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Set Password',
-                style: GoogleFonts.merriweather(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F4D20),
-                ),
+              Flexible(
+                child: Text('Set Password',
+                    style: GoogleFonts.merriweather(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF0F4D20),
+                    )),
               ),
               IconButton(
+                tooltip: 'Registration help',
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -1220,7 +1225,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   size: 26,
                 ),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               ),
             ],
           ),
@@ -1456,20 +1461,21 @@ class _RegisterScreenState extends State<RegisterScreen>
                     setState(() => _keepSignedIn = value ?? false),
                 activeColor: const Color(0xFF0F751B),
               ),
-              GestureDetector(
+              Expanded(
+                  child: InkWell(
                 onTap: () => setState(() => _keepSignedIn = !_keepSignedIn),
                 child: Text('Keep me signed in',
                     style: GoogleFonts.montserrat(
                         fontSize: 12, fontWeight: FontWeight.w500)),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 8),
 
           // Green "Complete Registration" Button
-          SizedBox(
+          Container(
             width: double.infinity,
-            height: 48,
+            constraints: const BoxConstraints(minHeight: 48),
             child: ElevatedButton(
               onPressed: _isCreatingAccount ? null : _handleStep3Complete,
               style: ElevatedButton.styleFrom(
@@ -1539,7 +1545,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          GestureDetector(
+                          Expanded(
+                              child: GestureDetector(
                             onTap: () {
                               if (_currentStep > 1) {
                                 _security.cancel();
@@ -1568,18 +1575,23 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  'KUMPAS',
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.8,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                                Flexible(
+                                    child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          'KUMPAS',
+                                          style: GoogleFonts.montserrat(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.8,
+                                            color: Colors.white,
+                                          ),
+                                        ))),
                               ],
                             ),
-                          ),
+                          )),
+                          const SizedBox(width: 12),
                           SizedBox(
                             width: 44,
                             height: 44,
@@ -1670,14 +1682,15 @@ class _RegisterScreenState extends State<RegisterScreen>
                           size: 20,
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        Flexible(
+                            child: Text(
                           'Isabela State University- Echague Campus',
                           style: GoogleFonts.montserrat(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: Colors.white,
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),

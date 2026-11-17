@@ -1,3 +1,5 @@
+enum OfflineUpdateResult { available, current, failed, skipped }
+
 /// Where the downloaded campus pack currently stands.
 enum OfflinePackState {
   /// Nothing downloaded yet.

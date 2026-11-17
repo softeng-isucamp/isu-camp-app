@@ -14,7 +14,6 @@ import 'otp_code_input.dart';
 const _green = Color(0xFF0F751B);
 const _darkGreen = Color(0xFF0F4D20);
 
-
 Widget _handle() => Center(
     child: Container(
         width: 44,
@@ -156,7 +155,9 @@ class _VerifyCodeSheetState extends State<VerifyCodeSheet>
       security.recordResend();
       _code.clear();
     } catch (error) {
-      if (mounted) setState(() => _error = ErrorMessages.present(error, 'Could not send the verification code. Please try again.'));
+      if (mounted)
+        setState(() => _error = ErrorMessages.present(
+            error, 'Could not send the verification code. Please try again.'));
     } finally {
       if (mounted) setState(() => _resending = false);
     }
@@ -255,6 +256,8 @@ class SetNewPasswordSheet extends StatefulWidget {
       await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
         backgroundColor: Colors.transparent,
         builder: (_) => SetNewPasswordSheet(
             security: security,
@@ -300,11 +303,12 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
               decoration: BoxDecoration(
                   shape: BoxShape.circle, color: met ? _green : Colors.grey)),
           const SizedBox(width: 6),
-          Text(label,
-              style: GoogleFonts.montserrat(
-                  fontSize: 11,
-                  color: met ? Colors.black87 : Colors.black54,
-                  fontWeight: met ? FontWeight.w600 : FontWeight.w400)),
+          Flexible(
+              child: Text(label,
+                  style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      color: met ? Colors.black87 : Colors.black54,
+                      fontWeight: met ? FontWeight.w600 : FontWeight.w400))),
         ]),
       );
 
@@ -316,6 +320,7 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     required TextEditingController controller,
     required bool visible,
     required String hint,
+    required String label,
     required VoidCallback onToggle,
     required ValueChanged<String> onChanged,
   }) =>
@@ -327,6 +332,7 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
         decoration: InputDecoration(
           hintText: hint,
           suffixIcon: IconButton(
+            tooltip: '${visible ? 'Hide' : 'Show'} $label',
             icon: Icon(visible ? Icons.visibility : Icons.visibility_off,
                 size: 20),
             onPressed: () {
@@ -367,7 +373,9 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
           widget.requireCurrentPassword ? _currentPassword.text : null);
       if (mounted) closeWith(true);
     } catch (error) {
-      if (mounted) setState(() => _error = ErrorMessages.present(error, 'Could not update your password. Please try again.'));
+      if (mounted)
+        setState(() => _error = ErrorMessages.present(
+            error, 'Could not update your password. Please try again.'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -383,113 +391,125 @@ class _SetNewPasswordSheetState extends State<SetNewPasswordSheet>
     final hasSpecialChar =
         text.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\+=~/\\\[\]]'));
 
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _handle(),
-              _title('Set New Password'),
-              const SizedBox(height: 4),
-              AnimatedBuilder(
-                animation: security,
-                builder: (context, _) => Text(
-                  'Session expires in ${security.format(security.setupRemaining)}',
-                  style: GoogleFonts.montserrat(
-                      fontSize: 10.5,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w600),
+    return PopScope(
+      canPop: !_saving,
+      child: Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: _title('Set New Password')),
+                  IconButton(
+                      tooltip: 'Close password editor',
+                      onPressed: _saving ? null : () => closeWith(false),
+                      icon: const Icon(Icons.close)),
+                ]),
+                const SizedBox(height: 4),
+                AnimatedBuilder(
+                  animation: security,
+                  builder: (context, _) => Text(
+                    'Session expires in ${security.format(security.setupRemaining)}',
+                    style: GoogleFonts.montserrat(
+                        fontSize: 10.5,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (widget.requireCurrentPassword) ...[
-                _label('Current Password'),
+                const SizedBox(height: 16),
+                if (widget.requireCurrentPassword) ...[
+                  _label('Current Password'),
+                  const SizedBox(height: 6),
+                  _passwordField(
+                    controller: _currentPassword,
+                    visible: _currentVisible,
+                    hint: 'Enter current password',
+                    label: 'current password',
+                    onToggle: () =>
+                        setState(() => _currentVisible = !_currentVisible),
+                    onChanged: (_) {
+                      security.recordActivity();
+                      if (_error != null) setState(() => _error = null);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                _label('New Password'),
                 const SizedBox(height: 6),
                 _passwordField(
-                  controller: _currentPassword,
-                  visible: _currentVisible,
-                  hint: 'Enter current password',
+                  controller: _newPassword,
+                  visible: _newVisible,
+                  hint: 'Enter new password',
+                  label: 'new password',
+                  onToggle: () => setState(() => _newVisible = !_newVisible),
+                  onChanged: (_) {
+                    security.recordActivity();
+                    setState(() => _error = null);
+                  },
+                ),
+                const SizedBox(height: 12),
+                _requirement('At least 8 characters', hasMinLength),
+                _requirement(
+                    'Mixed case letters (upper & lower)', hasMixedCase),
+                _requirement('At least one number', hasNumber),
+                _requirement('At least one special character', hasSpecialChar),
+                const SizedBox(height: 16),
+                _label('Confirm Password'),
+                const SizedBox(height: 6),
+                _passwordField(
+                  controller: _confirmPassword,
+                  visible: _confirmVisible,
+                  hint: 'Re-enter new password',
+                  label: 'confirm password',
                   onToggle: () =>
-                      setState(() => _currentVisible = !_currentVisible),
+                      setState(() => _confirmVisible = !_confirmVisible),
                   onChanged: (_) {
                     security.recordActivity();
                     if (_error != null) setState(() => _error = null);
                   },
                 ),
-                const SizedBox(height: 16),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(_error!,
+                        key: const ValueKey('set_password_error'),
+                        style: GoogleFonts.montserrat(
+                            fontSize: 12.5, color: Colors.redAccent)),
+                  ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _saving
+                        ? null
+                        : () => _submit(hasMinLength &&
+                            hasMixedCase &&
+                            hasNumber &&
+                            hasSpecialChar),
+                    style: ElevatedButton.styleFrom(backgroundColor: _green),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : Text('Update Password',
+                            style: GoogleFonts.montserrat(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                  ),
+                ),
               ],
-              _label('New Password'),
-              const SizedBox(height: 6),
-              _passwordField(
-                controller: _newPassword,
-                visible: _newVisible,
-                hint: 'Enter new password',
-                onToggle: () => setState(() => _newVisible = !_newVisible),
-                onChanged: (_) {
-                  security.recordActivity();
-                  setState(() => _error = null);
-                },
-              ),
-              const SizedBox(height: 12),
-              _requirement('At least 8 characters', hasMinLength),
-              _requirement('Mixed case letters (upper & lower)', hasMixedCase),
-              _requirement('At least one number', hasNumber),
-              _requirement('At least one special character', hasSpecialChar),
-              const SizedBox(height: 16),
-              _label('Confirm Password'),
-              const SizedBox(height: 6),
-              _passwordField(
-                controller: _confirmPassword,
-                visible: _confirmVisible,
-                hint: 'Re-enter new password',
-                onToggle: () =>
-                    setState(() => _confirmVisible = !_confirmVisible),
-                onChanged: (_) {
-                  security.recordActivity();
-                  if (_error != null) setState(() => _error = null);
-                },
-              ),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(_error!,
-                      key: const ValueKey('set_password_error'),
-                      style: GoogleFonts.montserrat(
-                          fontSize: 12.5, color: Colors.redAccent)),
-                ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _saving
-                      ? null
-                      : () => _submit(hasMinLength &&
-                          hasMixedCase &&
-                          hasNumber &&
-                          hasSpecialChar),
-                  style: ElevatedButton.styleFrom(backgroundColor: _green),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text('Update Password',
-                          style: GoogleFonts.montserrat(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

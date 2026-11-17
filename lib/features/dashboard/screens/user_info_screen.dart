@@ -86,181 +86,215 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
   @override
   Widget build(BuildContext context) {
     final username = UserSession.currentUsername;
+    final headerHeight =
+        MediaQuery.sizeOf(context).height < 500 ? 130.0 : 250.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B351E),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            // 1. Top Header with Faded Campus Image, "Done" button, and Curved Arch
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.topCenter,
+      body: Stack(children: [
+        SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            key: const ValueKey('profile-scroll'),
+            child: Column(
               children: [
-                ClipPath(
-                  clipper: _UserHeaderCurveClipper(),
-                  child: Container(
-                    height: 250,
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF0B351E),
-                    ),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Crop only the campus portion; the source includes a white lower panel.
-                        ClipRect(
-                            child: FittedBox(
-                          fit: BoxFit.cover,
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            width: 390,
-                            height: 360,
-                            child: ClipRect(
-                                child: OverflowBox(
+                // 1. Top Header with Faded Campus Image, "Done" button, and Curved Arch
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.topCenter,
+                  children: [
+                    ClipPath(
+                      clipper: _UserHeaderCurveClipper(),
+                      child: Container(
+                        height: headerHeight,
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0B351E),
+                        ),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Crop only the campus portion; the source includes a white lower panel.
+                            ClipRect(
+                                child: FittedBox(
+                              fit: BoxFit.cover,
                               alignment: Alignment.topCenter,
-                              minHeight: 844,
-                              maxHeight: 844,
-                              child: Image.asset(
-                                  'assets/images/Appdev_background1.webp',
-                                  width: 390,
-                                  height: 844,
-                                  fit: BoxFit.fill,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const ColoredBox(
-                                          color: Color(0xFF0B351E))),
+                              child: SizedBox(
+                                width: 390,
+                                height: 360,
+                                child: ClipRect(
+                                    child: OverflowBox(
+                                  alignment: Alignment.topCenter,
+                                  minHeight: 844,
+                                  maxHeight: 844,
+                                  child: Image.asset(
+                                      'assets/images/Appdev_background1.webp',
+                                      width: 390,
+                                      height: 844,
+                                      fit: BoxFit.fill,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const ColoredBox(
+                                                  color: Color(0xFF0B351E))),
+                                )),
+                              ),
                             )),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    const Color(0xFF0B351E)
+                                        .withValues(alpha: 0.15),
+                                    const Color(0xFF0B351E)
+                                        .withValues(alpha: 0.95),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Circular Avatar centered over the curved arch
+                    Positioned(
+                      bottom: -48,
+                      child: Container(
+                        width: 104,
+                        height: 104,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFFEDF0F2),
+                          border: Border.all(
+                            color: const Color(0xFF1F2937),
+                            width: 1.2,
                           ),
-                        )),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                const Color(0xFF0B351E).withValues(alpha: 0.15),
-                                const Color(0xFF0B351E).withValues(alpha: 0.95),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.22),
+                              blurRadius: 12,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.person_outline,
+                            size: 58,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 58),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                            child: Text(username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.montserrat(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 0.4))),
+                        IconButton(
+                            key: const ValueKey('edit_profile'),
+                            tooltip: 'Edit profile',
+                            onPressed: _editProfile,
+                            icon: const Icon(Icons.edit_outlined,
+                                color: Colors.white, size: 20)),
+                      ]),
+                ),
+                if (UserSession.currentUserType != null)
+                  Text(UserSession.currentUserType!,
+                      key: const ValueKey('profile_account_type_label'),
+                      style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70)),
+
+                const SizedBox(height: 28),
+
+                // 3. User Menu Cards Section
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    children: [
+                      // Card 1: Offline Map
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const OfflineMapScreen(),
+                              ),
+                            );
+                          },
+                          child: Ink(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.cloud_download_outlined,
+                                  color: Color(0xFF757575),
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(
+                                    'Offline Map',
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                ),
+                                _buildOfflineMapBadge(),
+                                const Icon(
+                                  Icons.chevron_right,
+                                  color: Color(0xFF9CA3AF),
+                                  size: 22,
+                                ),
                               ],
                             ),
                           ),
                         ),
-                        SafeArea(
-                          bottom: false,
-                          child: Align(
-                            alignment: Alignment.topRight,
-                            child: Padding(
-                              padding: const EdgeInsets.only(
-                                top: 18.0,
-                                right: 24.0,
-                              ),
-                              child: GestureDetector(
-                                onTap: () => Navigator.pop(context),
-                                child: Text(
-                                  'Done',
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 16.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Circular Avatar centered over the curved arch
-                Positioned(
-                  bottom: -48,
-                  child: Container(
-                    width: 104,
-                    height: 104,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFEDF0F2),
-                      border: Border.all(
-                        color: const Color(0xFF1F2937),
-                        width: 1.2,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.22),
-                          blurRadius: 12,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.person_outline,
-                        size: 58,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                      const SizedBox(height: 14),
 
-            const SizedBox(height: 58),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child:
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Flexible(
-                    child: Text(username,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.montserrat(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 0.4))),
-                IconButton(
-                    key: const ValueKey('edit_profile'),
-                    tooltip: 'Edit profile',
-                    onPressed: _editProfile,
-                    icon: const Icon(Icons.edit_outlined,
-                        color: Colors.white, size: 20)),
-              ]),
-            ),
-            if (UserSession.currentUserType != null)
-              Text(UserSession.currentUserType!,
-                  key: const ValueKey('profile_account_type_label'),
-                  style: GoogleFonts.montserrat(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white70)),
-
-            const SizedBox(height: 28),
-
-            // 3. User Menu Cards Section
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Column(
-                  children: [
-                    // Card 1: Offline Map
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const OfflineMapScreen(),
-                          ),
-                        );
-                      },
-                      child: Container(
+                      // Card 2: Grouped Menu (History, About us, Help)
+                      Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
@@ -272,168 +306,135 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                             ),
                           ],
                         ),
-                        child: Row(
+                        child: Column(
                           children: [
-                            const Icon(
-                              Icons.cloud_download_outlined,
-                              color: Color(0xFF757575),
-                              size: 22,
+                            _buildMenuRow(
+                              icon: Icons.access_time,
+                              label: 'History',
+                              onTap: () async {
+                                final destination = await Navigator.push<
+                                    NavigationHistoryEntry>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const _HistorySubScreen(),
+                                  ),
+                                );
+                                if (!context.mounted || destination == null) {
+                                  return;
+                                }
+                                Navigator.pop(context);
+                                widget.onNavigateToHistory?.call(destination);
+                              },
                             ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Text(
-                                'Offline Map',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF1E293B),
-                                ),
-                              ),
+                            const Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
                             ),
-                            _buildOfflineMapBadge(),
-                            const Icon(
-                              Icons.chevron_right,
-                              color: Color(0xFF9CA3AF),
-                              size: 22,
+                            _buildMenuRow(
+                              icon: Icons.people_outline,
+                              label: 'About us',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AboutUsScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
+                            ),
+                            _buildMenuRow(
+                              icon: Icons.help_outline,
+                              label: 'Help',
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const HelpScreen(),
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 32),
 
-                    // Card 2: Grouped Menu (History, About us, Help)
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          _buildMenuRow(
-                            icon: Icons.access_time,
-                            label: 'History',
-                            onTap: () async {
-                              final destination =
-                                  await Navigator.push<NavigationHistoryEntry>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const _HistorySubScreen(),
-                                ),
-                              );
-                              if (!context.mounted || destination == null) {
-                                return;
+                      // 4. Log Out Outlined Button
+                      SizedBox(
+                        width: 175,
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            try {
+                              await RememberedSessionStore.clear();
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Could not clear the saved session. Please try logging out again.')),
+                                );
                               }
-                              Navigator.pop(context);
-                              widget.onNavigateToHistory?.call(destination);
-                            },
-                          ),
-                          const Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9),
-                          ),
-                          _buildMenuRow(
-                            icon: Icons.people_outline,
-                            label: 'About us',
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AboutUsScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          const Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9),
-                          ),
-                          _buildMenuRow(
-                            icon: Icons.help_outline,
-                            label: 'Help',
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const HelpScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // 4. Log Out Outlined Button
-                    SizedBox(
-                      width: 175,
-                      height: 44,
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          try {
-                            await RememberedSessionStore.clear();
-                          } catch (_) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Could not clear the saved session. Please try logging out again.')),
-                              );
+                              return;
                             }
-                            return;
-                          }
-                          UserSession.logout();
-                          if (!context.mounted) return;
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const LoginScreen(),
+                            UserSession.logout();
+                            if (!context.mounted) return;
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                              color: Colors.white,
+                              width: 1.5,
                             ),
-                            (route) => false,
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(
-                            color: Colors.white,
-                            width: 1.5,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: EdgeInsets.zero,
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: EdgeInsets.zero,
-                        ),
-                        child: Text(
-                          'Log Out',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                          child: Text(
+                            'Log Out',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 24),
-                  ],
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        Positioned(
+            top: MediaQuery.paddingOf(context).top + 8,
+            right: 12,
+            child: TextButton(
+                key: const ValueKey('profile-done'),
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: const Color(0xFF0B351E),
+                    minimumSize: const Size(48, 48)),
+                child: const Text('Done'))),
+      ]),
     );
   }
 

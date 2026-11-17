@@ -160,7 +160,8 @@ class CampusRoom {
         keywords: (json['keywords'] ?? '').toString(),
         code: (json['code'] ?? '').toString(),
         coordinate: json['latitude'] is num && json['longitude'] is num
-            ? LatLng((json['latitude'] as num).toDouble(), (json['longitude'] as num).toDouble())
+            ? LatLng((json['latitude'] as num).toDouble(),
+                (json['longitude'] as num).toDouble())
             : null,
         id: json['id'] ?? '',
         title: json['title'] ?? '',
@@ -255,6 +256,16 @@ class CampusBuilding {
     this.routes = const [],
     this.polygonCoordinates = const [],
   });
+
+  /// Curated abbreviations are useful; import keys are not destination names.
+  String get displayAcronym {
+    final value = acronym.trim();
+    if (RegExp(r'^(?:OSM[-_ ]|BLDG[-_ ]|BUILDING[-_ ])', caseSensitive: false)
+        .hasMatch(value)) return '';
+    return value;
+  }
+
+  String get shortLabel => displayAcronym.isEmpty ? name : displayAcronym;
 
   Map<String, dynamic> toJson() => {
         'keywords': keywords,

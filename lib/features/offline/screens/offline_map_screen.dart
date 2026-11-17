@@ -51,12 +51,16 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
       return;
     }
     setState(() => _isCheckingUpdate = true);
-    final hasUpdate = await _pack.checkForUpdate();
+    final result = await _pack.checkForUpdate();
     if (!mounted) return;
     setState(() => _isCheckingUpdate = false);
-    if (announceNoUpdate && !hasUpdate) {
+    if (announceNoUpdate && result == OfflineUpdateResult.current) {
       _notify('The downloaded campus map is already up to date.',
           const Color(0xFF0F751B));
+    } else if (announceNoUpdate && result == OfflineUpdateResult.failed) {
+      _notify(
+          'Could not check for updates. Your downloaded map is still available. Check your connection and try again.',
+          const Color(0xFF92400E));
     }
   }
 
@@ -138,8 +142,10 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
                         color: Colors.white70, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style:
+                        TextButton.styleFrom(minimumSize: const Size(48, 48)),
                     child: Text(
                       'Done',
                       style: GoogleFonts.montserrat(
@@ -164,14 +170,15 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
                         const Icon(Icons.cloud_download_outlined,
                             size: 52, color: Color(0xFFECC700)),
                         const SizedBox(width: 16),
-                        Text(
+                        Expanded(
+                            child: Text(
                           'Offline Map',
                           style: GoogleFonts.montserrat(
                             fontSize: 26,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
                           ),
-                        ),
+                        )),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -274,6 +281,8 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
   }
 
   Widget _buildDownloadCard(OfflinePackStatus status) {
+    final stackAction = MediaQuery.sizeOf(context).width < 360 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.3;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -313,9 +322,15 @@ class _OfflineMapScreenState extends State<OfflineMapScreen> {
                   ],
                 ),
               ),
-              _buildActionButton(status),
+              if (!stackAction) _buildActionButton(status),
             ],
           ),
+          if (stackAction)
+            Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildActionButton(status))),
           if (status.state == OfflinePackState.downloading ||
               status.state == OfflinePackState.incomplete) ...[
             const SizedBox(height: 16),

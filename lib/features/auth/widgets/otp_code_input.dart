@@ -76,44 +76,46 @@ class _OtpCodeInputState extends State<OtpCodeInput> {
                             )),
                   ),
                 ),
-                TextField(
-                  key: const ValueKey('otp_code_input'),
-                  controller: widget.controller,
-                  focusNode: _focus,
-                  autofocus: true,
-                  enabled: widget.enabled && !widget.busy,
-                  autofillHints: const [AutofillHints.oneTimeCode],
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(6)
-                  ],
-                  style:
-                      const TextStyle(color: Colors.transparent, fontSize: 22),
-                  cursorColor: Colors.transparent,
-                  enableInteractiveSelection: false,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    filled: false,
-                    counterText: '',
-                    semanticCounterText: '6-digit verification code',
-                  ),
-                  onTap: () {
-                    if (widget.controller.text.length == 6) {
-                      widget.controller.selection =
-                          const TextSelection(baseOffset: 0, extentOffset: 6);
-                    }
-                    setState(() {});
-                  },
-                  onChanged: (code) {
-                    widget.onActivity();
-                    setState(() {});
-                    if (code.length == 6) widget.onCompleted(code);
-                  },
-                ),
+                Semantics(
+                    label: '6-digit verification code',
+                    child: TextField(
+                      key: const ValueKey('otp_code_input'),
+                      controller: widget.controller,
+                      focusNode: _focus,
+                      autofocus: true,
+                      enabled: widget.enabled && !widget.busy,
+                      autofillHints: const [AutofillHints.oneTimeCode],
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(6)
+                      ],
+                      style: const TextStyle(
+                          color: Colors.transparent, fontSize: 22),
+                      cursorColor: Colors.transparent,
+                      enableInteractiveSelection: false,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        filled: false,
+                        counterText: '',
+                        semanticCounterText: '6-digit verification code',
+                      ),
+                      onTap: () {
+                        if (widget.controller.text.length == 6) {
+                          widget.controller.selection = const TextSelection(
+                              baseOffset: 0, extentOffset: 6);
+                        }
+                        setState(() {});
+                      },
+                      onChanged: (code) {
+                        widget.onActivity();
+                        setState(() {});
+                        if (code.length == 6) widget.onCompleted(code);
+                      },
+                    )),
               ],
             ),
           ),

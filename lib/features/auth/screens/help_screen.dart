@@ -1,8 +1,41 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
+
+  static const supportPhone = String.fromEnvironment('SUPPORT_PHONE');
+
+  Future<void> _copySupportDetails(BuildContext context) async {
+    final details = supportPhone.isNotEmpty
+        ? supportPhone
+        : 'KUMPAS issue report\nLocation:\nWhat happened:\nExpected result:\n';
+    try {
+      await Clipboard.setData(ClipboardData(text: details));
+    } catch (_) {
+      if (!context.mounted) return;
+      await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text(supportPhone.isNotEmpty
+                    ? 'Support number'
+                    : 'Issue report'),
+                content: SingleChildScrollView(child: SelectableText(details)),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'))
+                ],
+              ));
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(supportPhone.isNotEmpty
+            ? 'Support number copied.'
+            : 'Issue report template copied. Add your details and share it with your campus administrator.')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +173,7 @@ class HelpScreen extends StatelessWidget {
                         stepNumber: '6.',
                         title: 'Update Map Data',
                         bulletPoints: [
-                          'Connect to the internet to receive the latest campus locations, offices, rooms, and route information.',
+                          'To update a downloaded map, connect to the internet, open Profile → Offline Map, check for updates, and choose Download update. Updates are installed only when you choose.',
                         ],
                       ),
 
@@ -157,7 +190,7 @@ class HelpScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'If you encounter incorrect location information, missing locations, or other issues while using KUMPAS, please contact the system administrator or report the issue through the provided support option.',
+                        'For incorrect or missing locations and other issues, contact your campus administrator or IT help desk. Copy an issue report and add the details to help them investigate.',
                         style: GoogleFonts.montserrat(
                           fontSize: 12,
                           color: Colors.white70,
@@ -166,26 +199,17 @@ class HelpScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
 
-                      // Contact Row
-                      RichText(
-                        text: TextSpan(
-                          style: GoogleFonts.montserrat(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                          children: const [
-                            TextSpan(text: 'Please contact '),
-                            TextSpan(
-                              text: '09123456789',
-                              style: TextStyle(
-                                color: Color(0xFF64B5F6),
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                            TextSpan(text: ' for further assistance.'),
-                          ],
-                        ),
+                      if (supportPhone.isNotEmpty)
+                        Text('Support: $supportPhone',
+                            style: const TextStyle(color: Colors.white)),
+                      TextButton.icon(
+                        onPressed: () => _copySupportDetails(context),
+                        style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFECC700)),
+                        icon: const Icon(Icons.copy_outlined),
+                        label: Text(supportPhone.isNotEmpty
+                            ? 'Copy support number'
+                            : 'Copy issue report'),
                       ),
                       const SizedBox(height: 28),
                     ],

@@ -146,13 +146,13 @@ class OfflinePackService extends ChangeNotifier {
 
   /// Asks the backend whether a newer dataset exists. Never downloads it.
   ///
-  /// Returns true only when an update is waiting for the user to accept.
-  Future<bool> checkForUpdate() async {
+  /// Distinguishes a successful check from an unreachable manifest or skipped check.
+  Future<OfflineUpdateResult> checkForUpdate() async {
     final installed = _status.installedVersion;
-    if (installed == null || _status.isBusy) return false;
+    if (installed == null || _status.isBusy) return OfflineUpdateResult.skipped;
     try {
       final manifest = await _publishedManifest();
-      if (_status.isBusy) return false;
+      if (_status.isBusy) return OfflineUpdateResult.skipped;
       final available = manifest.version;
       final checkedAt = DateTime.now();
       _update(_status.copyWith(
@@ -161,11 +161,12 @@ class OfflinePackService extends ChangeNotifier {
         clearUpdateVersion: available == installed,
       ));
       await _writeMeta(complete: _status.isReady);
-      return _status.hasUpdate;
+      return _status.hasUpdate
+          ? OfflineUpdateResult.available
+          : OfflineUpdateResult.current;
     } catch (_) {
-      // No connection, or the backend is older than this app. Keep using what
-      // is already downloaded and say nothing.
-      return false;
+      // A failed check must never confirm freshness. The stored map stays usable.
+      return OfflineUpdateResult.failed;
     }
   }
 

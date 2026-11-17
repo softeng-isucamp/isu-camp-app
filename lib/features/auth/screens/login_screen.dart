@@ -325,9 +325,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: const TextStyle(color: Colors.redAccent)),
                         ),
                       const SizedBox(height: 24),
-                      SizedBox(
+                      Container(
                         width: double.infinity,
-                        height: 48,
+                        constraints: const BoxConstraints(minHeight: 48),
                         child: ElevatedButton(
                           onPressed: requesting
                               ? null
@@ -472,7 +472,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
+                      Expanded(
+                          child: Row(
                         children: [
                           SizedBox(
                             width: 34,
@@ -488,17 +489,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            'KUMPAS',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.8,
-                              color: Colors.white,
-                            ),
-                          ),
+                          Flexible(
+                              child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'KUMPAS',
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8,
+                                      color: Colors.white,
+                                    ),
+                                  ))),
                         ],
-                      ),
+                      )),
+                      const SizedBox(width: 12),
                       SizedBox(
                         width: 44,
                         height: 44,
@@ -536,13 +542,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Log in',
-                            style: GoogleFonts.merriweather(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFF0F4D20),
-                            ),
+                          Flexible(
+                            child: Text('Log in',
+                                style: GoogleFonts.merriweather(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF0F4D20),
+                                )),
                           ),
                           IconButton(
                             tooltip: 'Login help',
@@ -582,16 +588,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
 
                       // Password field & Forgot Link triggering the sheet
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 12,
                         children: [
                           Text('Password',
                               style: GoogleFonts.montserrat(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.black87)),
-                          GestureDetector(
-                            onTap: () => _showForgotPasswordSheet(context),
+                          TextButton(
+                            onPressed: () => _showForgotPasswordSheet(context),
                             child: Text(
                               'Forgot Password?',
                               style: GoogleFonts.montserrat(
@@ -639,13 +647,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 setState(() => _keepSignedIn = value ?? false),
                             activeColor: const Color.fromARGB(255, 49, 94, 243),
                           ),
-                          GestureDetector(
+                          Expanded(
+                              child: InkWell(
                             onTap: () =>
                                 setState(() => _keepSignedIn = !_keepSignedIn),
                             child: Text('Keep me signed in',
                                 style: GoogleFonts.montserrat(
                                     fontSize: 13, fontWeight: FontWeight.w500)),
-                          ),
+                          )),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -661,8 +670,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       // Create Account Link
                       Align(
                         alignment: Alignment.centerRight,
-                        child: GestureDetector(
-                          onTap: () => Navigator.push(
+                        child: TextButton(
+                          onPressed: () => Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => const RegisterScreen(),
@@ -680,9 +689,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 18),
 
                       // Login Button
-                      SizedBox(
+                      Container(
                         width: double.infinity,
-                        height: 48,
+                        constraints: const BoxConstraints(minHeight: 48),
                         child: ElevatedButton(
                           onPressed: _isLoginLocked || _isLoggingIn
                               ? null
@@ -735,13 +744,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Icon(Icons.shield_outlined,
                         color: Colors.white, size: 20),
                     const SizedBox(width: 8),
-                    Text(
+                    Flexible(
+                        child: Text(
                       'Isabela State University- Echague Campus',
                       style: GoogleFonts.montserrat(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: Colors.white),
-                    ),
+                    )),
                   ],
                 ),
               ],

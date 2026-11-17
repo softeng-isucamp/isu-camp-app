@@ -131,7 +131,8 @@ class IndoorLocationDetailsDialog extends StatelessWidget {
                             height: 180,
                             width: double.infinity,
                             child: LocationPhoto(
-                              imageUrl: room?.imageUrl ?? (room == null ? building.imageUrl : null),
+                              imageUrl: room?.imageUrl ??
+                                  (room == null ? building.imageUrl : null),
                             )),
                       ),
                       const SizedBox(height: 16),
@@ -151,9 +152,14 @@ class IndoorLocationDetailsDialog extends StatelessWidget {
                         const SizedBox(height: 6),
                         Text('Category: ${building.category}'),
                       ],
-                      if ((room == null ? building.description : room!.description ?? '').isNotEmpty) ...[
+                      if ((room == null
+                              ? building.description
+                              : room!.description ?? '')
+                          .isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        Text(room == null ? building.description : room!.description!),
+                        Text(room == null
+                            ? building.description
+                            : room!.description!),
                       ],
                       const SizedBox(height: 20),
                       SizedBox(
@@ -1691,7 +1697,10 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Transport Mode Selector Icons
-                    Row(
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           'Route Modes',
@@ -1701,13 +1710,9 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(width: 14),
                         _buildModeIcon(TransportMode.car),
-                        const SizedBox(width: 12),
                         _buildModeIcon(TransportMode.motorcycle),
-                        const SizedBox(width: 12),
                         _buildModeIcon(TransportMode.bicycle),
-                        const SizedBox(width: 12),
                         _buildModeIcon(TransportMode.walking),
                       ],
                     ),
@@ -1944,27 +1949,10 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                   children: [
                     Row(
                       children: [
-                        GestureDetector(
-                          onTap: widget.onBack,
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.arrow_back,
-                                size: 18,
-                                color: Color(0xFF0F4D20),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Back',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF0F4D20),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        TextButton.icon(
+                            onPressed: widget.onBack,
+                            icon: const Icon(Icons.arrow_back, size: 18),
+                            label: const Text('Back')),
                         const Spacer(),
                         TextButton(
                           onPressed: widget.onCancel,
@@ -2146,8 +2134,7 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
                         fontWeight: FontWeight.w800,
                         color: green)),
                 const SizedBox(height: 4),
-                Text(
-                    'Direct route to ${widget.destination.acronym.isNotEmpty ? widget.destination.acronym : widget.destination.name}',
+                Text('Direct route to ${widget.destination.shortLabel}',
                     style: GoogleFonts.montserrat(
                         fontSize: 12, color: Colors.grey.shade600)),
               ],
@@ -2181,27 +2168,22 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
 
   Widget _buildModeIcon(TransportMode mode) {
     final isSelected = _selectedMode == mode;
-    return GestureDetector(
-      onTap: () {
-        if (_selectedMode == mode) return;
-        setState(() => _selectedMode = mode);
-        widget.onTransportModeChanged?.call(mode);
-        _loadRoutes();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white24 : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Tooltip(
-          message: routeModeLabel(mode),
-          child: Icon(
-            routeModeIcon(mode),
-            color: isSelected ? Colors.white : Colors.white60,
-            size: 20,
-          ),
-        ),
+    return Semantics(
+      selected: isSelected,
+      inMutuallyExclusiveGroup: true,
+      child: IconButton(
+        tooltip: routeModeLabel(mode),
+        style: IconButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            backgroundColor: isSelected ? Colors.white24 : Colors.transparent,
+            foregroundColor: isSelected ? Colors.white : Colors.white60),
+        onPressed: () {
+          if (_selectedMode == mode) return;
+          setState(() => _selectedMode = mode);
+          widget.onTransportModeChanged?.call(mode);
+          _loadRoutes();
+        },
+        icon: Icon(routeModeIcon(mode), size: 20),
       ),
     );
   }
@@ -2217,128 +2199,107 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
   }) {
     final isSelected = _selectedRoute == type;
 
-    return GestureDetector(
-      onTap: () => setState(() => _selectedRoute = type),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.transparent,
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Semantics(
+      checked: isSelected,
+      inMutuallyExclusiveGroup: true,
+      child: Material(
+        color: Colors.white,
+        elevation: 1,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(
+                color:
+                    isSelected ? const Color(0xFF0F5A28) : Colors.transparent,
+                width: 1.5)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => setState(() => _selectedRoute = type),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEDEBEA),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 28),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black87,
-                        ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEDEBEA),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 11.5,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFF1B62D4)
-                          : Colors.grey.shade400,
-                      width: 2,
+                      child: Icon(icon, color: iconColor, size: 28),
                     ),
-                  ),
-                  child: isSelected
-                      ? Center(
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Color(0xFF1B62D4),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
                             ),
                           ),
-                        )
-                      : null,
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 11.5,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFF0F5A28)
+                              : Colors.grey.shade400,
+                          width: 2,
+                        ),
+                      ),
+                      child: isSelected
+                          ? Center(
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFF0F5A28),
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 12),
+                Wrap(spacing: 18, runSpacing: 6, children: [
+                  Text.rich(TextSpan(children: [
+                    const TextSpan(text: 'Distance: '),
+                    TextSpan(
+                        text: distance,
+                        style: const TextStyle(fontWeight: FontWeight.bold))
+                  ])),
+                  Text.rich(TextSpan(children: [
+                    const TextSpan(text: 'Est. Walk: '),
+                    TextSpan(
+                        text: walkTime,
+                        style: const TextStyle(fontWeight: FontWeight.bold))
+                  ])),
+                ]),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Text(
-                  'Distance: ',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                Text(
-                  distance,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(width: 18),
-                Text(
-                  'Est. Walk: ',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                Text(
-                  walkTime,
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -2409,27 +2370,10 @@ class RouteDetailsSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              onTap: onBack,
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.arrow_back,
-                    size: 18,
-                    color: Color(0xFF0F4D20),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Back',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF0F4D20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            TextButton.icon(
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back, size: 18),
+                label: const Text('Back')),
 
             const SizedBox(height: 10),
 
@@ -2459,7 +2403,9 @@ class RouteDetailsSheet extends StatelessWidget {
             // Origin to Destination Timeline
             Row(
               children: [
-                Column(
+                Flexible(
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
                       width: 18,
@@ -2474,7 +2420,8 @@ class RouteDetailsSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      origin.label.toUpperCase(),
+                      origin.label,
+                      textAlign: TextAlign.center,
                       style: GoogleFonts.montserrat(
                         fontSize: 8.5,
                         fontWeight: FontWeight.bold,
@@ -2482,7 +2429,7 @@ class RouteDetailsSheet extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
+                )),
                 Expanded(
                   child: Container(
                     height: 2,
@@ -2490,7 +2437,9 @@ class RouteDetailsSheet extends StatelessWidget {
                     color: Colors.grey.shade400,
                   ),
                 ),
-                Column(
+                Flexible(
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(
                       Icons.location_on,
@@ -2499,7 +2448,8 @@ class RouteDetailsSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      destination.acronym.toUpperCase(),
+                      destination.shortLabel,
+                      textAlign: TextAlign.center,
                       style: GoogleFonts.montserrat(
                         fontSize: 8.5,
                         fontWeight: FontWeight.bold,
@@ -2507,7 +2457,7 @@ class RouteDetailsSheet extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
+                )),
               ],
             ),
 
