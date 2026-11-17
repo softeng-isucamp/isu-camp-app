@@ -493,4 +493,126 @@ void main() {
     await tester.tap(find.byIcon(Icons.chevron_right));
     expect(nextCount, 1);
   });
+  for (final size in [const Size(320, 568), const Size(844, 390)]) {
+    testWidgets('navigation controls remain usable at $size with large text',
+        (tester) async {
+      await tester.binding.setSurfaceSize(size);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final route = WalkingRoute.fromJson({
+        'type': 'shortest',
+        'distanceMeters': 120,
+        'estimatedMinutes': 2,
+        'startNodeName': 'Entrance',
+        'pathPoints': [
+          [16.7216, 121.6917],
+          [16.7220, 121.6920]
+        ],
+        'steps': [],
+      });
+      var recentered = 0;
+      var ended = 0;
+      var retried = 0;
+      await tester.pumpWidget(MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: const TextScaler.linear(2),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 34),
+          ),
+          child: child!,
+        ),
+        home: Scaffold(
+            body: ActiveNavigationHud(
+          route: route,
+          destination: destination,
+          destinationRoom: destination.rooms.first,
+          origin: currentLocation,
+          selectedRouteType: RouteType.shortest,
+          selectedTransportMode: TransportMode.walking,
+          isFollowing: false,
+          navigationStatus:
+              'GPS signal lost. Waiting for an accurate position.',
+          onRecenter: () => recentered++,
+          onEndRoute: () => ended++,
+          onRetryRoute: () => retried++,
+        )),
+      ));
+      expect(tester.takeException(), isNull);
+      expect(find.byTooltip('Recenter and follow direction'), findsOneWidget);
+      expect(find.byIcon(Icons.info_outline), findsOneWidget);
+      expect(find.textContaining('m remaining'), findsNothing);
+      final recenter = find.byKey(const ValueKey('navigation-recenter'));
+      expect(tester.getSize(recenter).shortestSide, greaterThanOrEqualTo(48));
+      await tester.tap(recenter);
+      expect(recentered, 1);
+      await tester.ensureVisible(find.text('Retry route'));
+      await tester.tap(find.text('Retry route'));
+      expect(retried, 1);
+      await tester.ensureVisible(find.text('End Route'));
+      await tester.tap(find.text('End Route'));
+      expect(ended, 1);
+      final endRect =
+          tester.getRect(find.widgetWithText(ElevatedButton, 'End Route'));
+      expect(endRect.bottom, lessThanOrEqualTo(size.height - 34));
+      expect(tester.takeException(), isNull);
+    });
+  }
+  for (final size in [const Size(320, 568), const Size(844, 390)]) {
+    testWidgets('preview and arrival fit $size with large text',
+        (tester) async {
+      await tester.binding.setSurfaceSize(size);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final route = WalkingRoute.fromJson({
+        'type': 'shortest',
+        'distanceMeters': 120,
+        'estimatedMinutes': 2,
+        'startNodeName': 'Entrance',
+        'pathPoints': [
+          [16.7216, 121.6917],
+          [16.7220, 121.6920]
+        ],
+        'steps': [],
+      });
+      Widget wrap(Widget child) => MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(2),
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 34),
+              ),
+              child: child!,
+            ),
+            home: Scaffold(body: child),
+          );
+      var next = 0;
+      await tester.pumpWidget(wrap(RoutePreviewHud(
+        route: route,
+        selectedRouteType: RouteType.comfortableShaded,
+        step: const WalkingRouteStep(
+            instruction: 'Turn left toward the College of Medicine entrance',
+            distanceMeters: 40,
+            coordinate: LatLng(16.7216, 121.6917)),
+        currentStepIndex: 0,
+        totalSteps: 3,
+        onBack: () {},
+        onPrevious: null,
+        onNext: () => next++,
+      )));
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.byTooltip('Next step'));
+      await tester.tap(find.byTooltip('Next step'));
+      expect(next, 1);
+      expect(tester.takeException(), isNull);
+      var finished = 0;
+      await tester.pumpWidget(wrap(ArrivalHud(
+        destination: destination,
+        destinationRoom: destination.rooms.first,
+        onFinish: () => finished++,
+      )));
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Finish'));
+      expect(finished, 1);
+      expect(
+          tester.getRect(find.widgetWithText(ElevatedButton, 'Finish')).bottom,
+          lessThanOrEqualTo(size.height - 34));
+    });
+  }
 }

@@ -2432,8 +2432,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
               child: Column(
                 children: [
                   // Recenter to ISU Echague Main Gate
-                  FloatingActionButton.small(
+                  FloatingActionButton(
                     heroTag: 'btn_recenter',
+                    tooltip: 'Recenter map',
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF0F751B),
                     elevation: 4,
@@ -2449,8 +2450,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   ),
                   const SizedBox(height: 10),
                   // Zoom In
-                  FloatingActionButton.small(
+                  FloatingActionButton(
                     heroTag: 'btn_zoom_in',
+                    tooltip: 'Zoom in',
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF0F751B),
                     elevation: 4,
@@ -2465,8 +2467,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   ),
                   const SizedBox(height: 8),
                   // Zoom Out
-                  FloatingActionButton.small(
+                  FloatingActionButton(
                     heroTag: 'btn_zoom_out',
+                    tooltip: 'Zoom out',
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF0F751B),
                     elevation: 4,
@@ -2974,37 +2977,13 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 progress: _liveProgress,
                 navigationStatus: _navigationStatus,
                 onRecenter: _resumeNavigationFollowing,
+                isFollowing: _followNavigationCamera,
                 onRetryRoute: !_isRerouting && _navigationStatus != null
                     ? () async {
                         await _initializeCurrentLocation();
                         if (mounted) await _reroute(force: true);
                       }
                     : null,
-              ),
-            ),
-
-          if (_navigationState == NavigationUiState.navigating)
-            Positioned(
-              right: 16,
-              top: topPadding + 150,
-              child: FloatingActionButton.small(
-                heroTag: 'btn_follow_navigation',
-                tooltip: _followNavigationCamera
-                    ? 'Following your direction'
-                    : 'Recenter and follow direction',
-                backgroundColor: _followNavigationCamera
-                    ? navigationRouteBlue
-                    : Colors.white,
-                foregroundColor: _followNavigationCamera
-                    ? Colors.white
-                    : navigationRouteBlue,
-                onPressed: _resumeNavigationFollowing,
-                child: Icon(
-                  _followNavigationCamera
-                      ? Icons.navigation
-                      : Icons.my_location,
-                  size: 21,
-                ),
               ),
             ),
 
