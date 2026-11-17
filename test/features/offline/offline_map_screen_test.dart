@@ -67,13 +67,25 @@ class _UnavailableUpdatePack extends _ProgressPack {
   }
 
   @override
-  Future<bool> checkForUpdate() async => true;
+  Future<OfflineUpdateResult> checkForUpdate() async =>
+      OfflineUpdateResult.available;
 
   @override
   Future<void> download({bool update = false}) async {
     show(status.copyWith(
         message: 'The offline map pack is being prepared. Try again later.'));
   }
+}
+
+class _FailedCheckPack extends OfflinePackService {
+  @override
+  OfflinePackStatus get status => const OfflinePackStatus(
+      state: OfflinePackState.ready, installedVersion: 'v1');
+  @override
+  Future<void> load() async {}
+  @override
+  Future<OfflineUpdateResult> checkForUpdate() async =>
+      OfflineUpdateResult.failed;
 }
 
 void main() {
@@ -125,6 +137,22 @@ void main() {
   String subtitle(WidgetTester tester) => tester
       .widget<Text>(find.byKey(const ValueKey('offline-pack-subtitle')))
       .data!;
+
+  testWidgets('manual failed update check never announces freshness',
+      (tester) async {
+    final pack = _FailedCheckPack();
+    await tester.pumpWidget(MaterialApp(home: OfflineMapScreen(pack: pack)));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Check for updates'));
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not check for updates.'), findsOneWidget);
+    expect(find.text('The downloaded campus map is already up to date.'),
+        findsNothing);
+    expect(pack.status.isReady, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    pack.dispose();
+  });
 
   testWidgets('download and pause show MB without file counts or percentages',
       (tester) async {

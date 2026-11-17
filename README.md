@@ -96,3 +96,10 @@ identifies itself with `campusDownloadUserAgent`. For wider deployment, point
 Offline mode needs a writable app directory, so it is offered on Android, iOS,
 Windows, macOS, and Linux. On the web build the screen reports it as available
 only in the installed app.
+
+### Help contact
+
+Help offers **Copy issue report** when the campus has not supplied a support
+number. To offer **Copy support number** instead, configure the verified campus
+contact at build time with `--dart-define=SUPPORT_PHONE=<campus-number>`. No
+placeholder phone number ships as a support destination.

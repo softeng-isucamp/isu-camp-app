@@ -1104,176 +1104,14 @@ class _MapViewScreenState extends State<MapViewScreen> {
     }
   }
 
-  bool _matchesCategoryFilter(CampusBuilding b, String filter) {
-    if (filter == 'All') return true;
-
-    final name = b.name.toLowerCase();
-    final acronym = b.acronym.toLowerCase();
-    final category = b.category.toLowerCase();
-    final description = b.description.toLowerCase();
-    final combined = '$category $name $acronym $description';
-
-    final isParkingLocation = b.isParking ||
-        category.contains('parking') ||
-        name.contains('parking') ||
-        acronym.contains('parking');
-
-    if (filter == 'Parking' || filter == 'Parkings') {
-      return isParkingLocation ||
-          b.rooms.any((r) =>
-              r.category == RoomCategory.parking ||
-              r.title.toLowerCase().contains('parking'));
-    }
-
-    // Never show parking lots under non-parking category filters
-    if (isParkingLocation) return false;
-
-    switch (filter) {
-      case 'College':
-      case 'Colleges':
-        return category.contains('college') ||
-            category.contains('academic') ||
-            name.contains('college') ||
-            name.contains('school') ||
-            name.contains('institute') ||
-            const {
-              'ccsict',
-              'coe',
-              'cbapa',
-              'ca',
-              'ced',
-              'cas',
-              'ccje',
-              'cf',
-              'con',
-              'svm',
-            }.contains(acronym);
-
-      case 'Campus services':
-        return category.contains('service') ||
-            category.contains('admin') ||
-            combined.contains('campus service') ||
-            combined.contains('administration') ||
-            combined.contains('osas') ||
-            combined.contains('student affairs') ||
-            combined.contains('student service') ||
-            combined.contains('infirmary') ||
-            combined.contains('clinic') ||
-            combined.contains('health') ||
-            combined.contains('library') ||
-            combined.contains('security') ||
-            combined.contains('guard') ||
-            combined.contains('registrar') ||
-            combined.contains('cashier') ||
-            combined.contains('guidance') ||
-            b.rooms.any((r) {
-              final rt = r.title.toLowerCase();
-              return r.category == RoomCategory.administrative ||
-                  rt.contains('service') ||
-                  rt.contains('registrar') ||
-                  rt.contains('cashier') ||
-                  rt.contains('clinic') ||
-                  rt.contains('osas') ||
-                  rt.contains('guidance');
-            });
-
-      case 'Food':
-        return category.contains('food') ||
-            combined.contains('canteen') ||
-            combined.contains('cafeteria') ||
-            combined.contains('food') ||
-            combined.contains('dining') ||
-            combined.contains('eatery') ||
-            b.rooms.any((r) {
-              final rt = r.title.toLowerCase();
-              return rt.contains('canteen') ||
-                  rt.contains('cafeteria') ||
-                  rt.contains('food');
-            });
-
-      case 'Facility':
-        return category.contains('facility') ||
-            category.contains('facilities') ||
-            combined.contains('gym') ||
-            combined.contains('grandstand') ||
-            combined.contains('auditorium') ||
-            combined.contains('oval') ||
-            combined.contains('court') ||
-            combined.contains('dorm') ||
-            combined.contains('hostel') ||
-            combined.contains('chapel') ||
-            combined.contains('church') ||
-            combined.contains('center') ||
-            combined.contains('hall') ||
-            b.rooms.any((r) =>
-                r.category == RoomCategory.facility ||
-                r.category == RoomCategory.studyArea ||
-                r.title.toLowerCase().contains('facility'));
-
-      case 'Room':
-        return category == 'room' ||
-            b.rooms.any((r) =>
-                r.category == RoomCategory.room ||
-                r.category == RoomCategory.classroom ||
-                r.title.toLowerCase().contains('room'));
-
-      case 'Office':
-        return category.contains('office') ||
-            category.contains('admin') ||
-            name.contains('office') ||
-            name.contains('administration') ||
-            b.rooms.any((r) =>
-                r.category == RoomCategory.office ||
-                r.category == RoomCategory.administrative ||
-                r.category == RoomCategory.faculty ||
-                r.title.toLowerCase().contains('office'));
-
-      case 'Laboratory':
-        return category.contains('lab') ||
-            name.contains('lab') ||
-            b.rooms.any((r) =>
-                r.category == RoomCategory.laboratory ||
-                r.title.toLowerCase().contains('lab'));
-
-      case 'Restroom':
-        final hasCrWord = RegExp(r'cr').hasMatch(combined);
-        return category.contains('restroom') ||
-            combined.contains('restroom') ||
-            combined.contains('comfort room') ||
-            combined.contains('toilet') ||
-            combined.contains('washroom') ||
-            hasCrWord ||
-            b.rooms.any((r) {
-              final rt = r.title.toLowerCase();
-              final rd = (r.description ?? '').toLowerCase();
-              return r.category == RoomCategory.restroom ||
-                  rt.contains('restroom') ||
-                  rt.contains('comfort room') ||
-                  rt.contains('toilet') ||
-                  rt.contains('washroom') ||
-                  RegExp(r'cr').hasMatch(rt) ||
-                  RegExp(r'cr').hasMatch(rd);
-            });
-
-      case 'Shaded':
-        return b.hasShadedPath;
-
-      default:
-        return true;
-    }
-  }
+  bool _matchesCategoryFilter(CampusBuilding b, String filter) =>
+      CampusSearch.matchesCategory(b, filter);
 
   List<CampusBuilding> _getFilteredBuildings() {
     final query = _searchController.text.trim();
     final ids = query.isEmpty
         ? <String>{}
-        : _navigationState == NavigationUiState.searchResults
-            ? _getSubmittedSearchResults().map((r) => r.building.id).toSet()
-            : CampusSearch.search(
-                isuCampusBuildings,
-                query,
-                origin: _currentUserLocation,
-              ).map((r) => r.building.id).toSet();
+        : _searchMatches(query).map((r) => r.building.id).toSet();
     return isuCampusBuildings.where((b) {
       if (query.isNotEmpty && !ids.contains(b.id)) return false;
       if (!_matchesCategoryFilter(b, _selectedCategoryFilter)) return false;
@@ -1281,149 +1119,14 @@ class _MapViewScreenState extends State<MapViewScreen> {
     }).toList();
   }
 
-  List<SearchResultItem> _getSubmittedSearchResults([String? rawQuery]) {
-    final query = (rawQuery ?? _searchController.text).trim();
-    if (query.isEmpty) return const [];
+  List<CampusSearchResult> _searchMatches(String query) =>
+      CampusSearch.search(isuCampusBuildings, query,
+          origin: _currentUserLocation, category: _selectedCategoryFilter);
 
-    final items = <SearchResultItem>[];
-    final seenKeys = <String>{};
-
-    void addItem(CampusBuilding building,
-        {CampusRoom? room, bool isRelated = false}) {
-      if (!_matchesCategoryFilter(building, _selectedCategoryFilter)) return;
-      final key =
-          room == null ? 'b:${building.id}' : 'r:${building.id}:${room.id}';
-      if (seenKeys.add(key)) {
-        items.add(SearchResultItem(
-          building: building,
-          room: room,
-          isRelated: isRelated,
-        ));
-      }
-    }
-
-    // 1. Direct matches from CampusSearch (sorted by relevance / distance)
-    final directMatches = CampusSearch.search(
-      isuCampusBuildings,
-      query,
-      origin: _currentUserLocation,
-    );
-    for (final match in directMatches) {
-      addItem(match.building, room: match.room, isRelated: false);
-    }
-
-    // Include all remaining direct matches not capped by origin limit
-    for (final match in CampusSearch.search(isuCampusBuildings, query)) {
-      addItem(match.building, room: match.room, isRelated: false);
-    }
-
-    // 2. Category-based matches if query maps to a known category
-    final inferredCategory = _categoryFromSearchQuery(query);
-    if (inferredCategory != null) {
-      for (final building in isuCampusBuildings) {
-        if (_matchesCategoryFilter(building, inferredCategory)) {
-          addItem(building, isRelated: true);
-        }
-      }
-    }
-
-    // 3. Related buildings and rooms matching normalized tokens / prefixes
-    final normalizedQuery = CampusSearch.normalize(query);
-    final queryTokens = normalizedQuery
-        .split(RegExp(r'\s+'))
-        .where((token) => token.length >= 2)
-        .toList();
-
-    if (queryTokens.isNotEmpty) {
-      for (final building in isuCampusBuildings) {
-        final bDoc = CampusSearch.normalize(
-          '${building.name} ${building.acronym} ${building.category} '
-          '${building.keywords} ${building.description}',
-        );
-        final buildingWords = bDoc.split(RegExp(r'\s+'));
-        final matchesBuilding = queryTokens.any(
-          (token) =>
-              bDoc.contains(token) ||
-              (token.length >= 3 &&
-                  buildingWords.any((w) => w.startsWith(token))),
-        );
-        if (matchesBuilding) {
-          addItem(building, isRelated: true);
-        }
-
-        for (final room in building.rooms) {
-          final rDoc = CampusSearch.normalize(
-            '${room.title} ${room.code} ${room.keywords} '
-            '${room.category.name} ${room.description ?? ''}',
-          );
-          final roomWords = rDoc.split(RegExp(r'\s+'));
-          final matchesRoom = queryTokens.any(
-            (token) =>
-                rDoc.contains(token) ||
-                (token.length >= 3 &&
-                    roomWords.any((w) => w.startsWith(token))),
-          );
-          if (matchesRoom) {
-            addItem(building, room: room, isRelated: true);
-          }
-        }
-      }
-    }
-
-    // 4. Related locations sharing name tokens or category with direct matches
-    if (items.isNotEmpty) {
-      final primaryBuildings =
-          items.where((i) => !i.isRelated).map((i) => i.building).toList();
-      const genericWords = {
-        'building',
-        'college',
-        'of',
-        'the',
-        'and',
-        'in',
-        'department',
-        'center',
-        'hall',
-        'main',
-        'new',
-        'old',
-        'isu',
-      };
-      final relatedWords = <String>{};
-      final relatedCategories = <String>{};
-      for (final b in primaryBuildings) {
-        if (b.category.trim().isNotEmpty) {
-          relatedCategories.add(b.category.trim().toLowerCase());
-        }
-        for (final w in CampusSearch.normalize('${b.name} ${b.acronym}')
-            .split(RegExp(r'\s+'))) {
-          if (w.length >= 3 && !genericWords.contains(w)) {
-            relatedWords.add(w);
-          }
-        }
-      }
-
-      if (relatedWords.isNotEmpty) {
-        for (final building in isuCampusBuildings) {
-          final bWords = CampusSearch.normalize(
-            '${building.name} ${building.acronym} ${building.keywords}',
-          ).split(RegExp(r'\s+')).toSet();
-          if (relatedWords.any(bWords.contains)) {
-            addItem(building, isRelated: true);
-          }
-        }
-      }
-
-      for (final building in isuCampusBuildings) {
-        if (relatedCategories
-            .contains(building.category.trim().toLowerCase())) {
-          addItem(building, isRelated: true);
-        }
-      }
-    }
-
-    return items;
-  }
+  List<SearchResultItem> _getSubmittedSearchResults([String? rawQuery]) =>
+      _searchMatches((rawQuery ?? _searchController.text).trim())
+          .map((r) => SearchResultItem(building: r.building, room: r.room))
+          .toList();
 
   void _selectBuildingAndShowDetails(CampusBuilding building,
       {CampusRoom? room}) {
@@ -1493,10 +1196,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
   }
 
   List<SmartSearchResult> _getSmartSearchResults() {
-    return CampusSearch.search(isuCampusBuildings, _searchController.text,
-            origin: _currentUserLocation)
-        .where(
-            (r) => _matchesCategoryFilter(r.building, _selectedCategoryFilter))
+    return _searchMatches(_searchController.text)
         .map((r) => SmartSearchResult(
             building: r.building,
             matchedRooms: r.room == null ? [] : [r.room!],
@@ -1595,7 +1295,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final query = _searchController.text.trim();
     final isQueryEmpty = query.isEmpty;
     final smartResults = _getSmartSearchResults();
-    final suggestedBuildings = _getSuggestedBuildings();
+    final suggestedBuildings = _getSuggestedBuildings()
+        .where((b) => _matchesCategoryFilter(b, _selectedCategoryFilter))
+        .toList();
 
     return Positioned(
       top: topPadding + _mapHeaderHeight + 8,
@@ -1759,8 +1461,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     ],
                   ),
                   subtitle: Text(
-                    bldg.acronym.isNotEmpty
-                        ? '${bldg.acronym} • ${bldg.category}${bldg.rooms.isNotEmpty ? ' • ${bldg.rooms.length} Rooms' : ''}'
+                    bldg.displayAcronym.isNotEmpty
+                        ? '${bldg.displayAcronym} • ${bldg.category}${bldg.rooms.isNotEmpty ? ' • ${bldg.rooms.length} Rooms' : ''}'
                         : '${bldg.category}${bldg.rooms.isNotEmpty ? ' • ${bldg.rooms.length} Rooms' : ''}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1904,8 +1606,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                       ],
                     ),
                     subtitle: Text(
-                      bldg.acronym.isNotEmpty
-                          ? '${bldg.acronym} • ${bldg.category}'
+                      bldg.displayAcronym.isNotEmpty
+                          ? '${bldg.displayAcronym} • ${bldg.category}'
                           : bldg.category,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1953,14 +1655,15 @@ class _MapViewScreenState extends State<MapViewScreen> {
                                     color: Color(0xFF0F751B),
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(
+                                  Flexible(
+                                      child: Text(
                                     '${room.title} (${room.floor})',
                                     style: GoogleFonts.montserrat(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF0F5A28),
                                     ),
-                                  ),
+                                  )),
                                 ],
                               ),
                             ),

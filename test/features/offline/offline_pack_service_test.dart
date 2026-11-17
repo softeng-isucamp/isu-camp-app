@@ -31,6 +31,21 @@ void main() {
     await root.delete(recursive: true);
   });
 
+  test('update checks distinguish freshness, failure and an absent pack',
+      () async {
+    final pack = service();
+    expect(await pack.checkForUpdate(), OfflineUpdateResult.skipped);
+    await pack.download();
+    expect(await pack.checkForUpdate(), OfflineUpdateResult.current);
+    final checked = pack.status.lastCheckedAt;
+    backend.intercept = (request) async =>
+        http.StreamedResponse(Stream.value(utf8.encode('Unavailable')), 503);
+    expect(await pack.checkForUpdate(), OfflineUpdateResult.failed);
+    expect(pack.status.lastCheckedAt, checked);
+    expect(pack.status.isReady, isTrue);
+    expect(pack.buildings, isNotEmpty);
+  });
+
   test(
       'manifest total is known before the first payload; no HEAD or live sources',
       () async {
@@ -111,7 +126,7 @@ void main() {
     backend.versions[updated.version] = updated;
     backend.current = updated;
     backend.requests.clear();
-    expect(await pack.checkForUpdate(), isTrue);
+    expect(await pack.checkForUpdate(), OfflineUpdateResult.available);
     expect(pack.status.hasUpdate, isTrue);
     expect(backend.requests.single.url.path, '/campus/offline/manifest');
     expect(pack.buildings!.single.name, 'Admin Building');

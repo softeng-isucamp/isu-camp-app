@@ -13,6 +13,194 @@ class CampusSearchResult {
 
 /// Local, deterministic search. No trained model or ML endpoint is used.
 class CampusSearch {
+  static bool matchesCategory(CampusBuilding b, String filter,
+      {CampusRoom? room, bool includeContents = true}) {
+    if (filter == 'All') return true;
+    if (room != null) {
+      final title = normalize(room.title);
+      final category = room.category;
+      return switch (filter) {
+        'Room' => !title.contains('restroom') &&
+            (category == RoomCategory.room ||
+                category == RoomCategory.classroom),
+        'Office' => category == RoomCategory.office ||
+            category == RoomCategory.administrative ||
+            category == RoomCategory.faculty,
+        'Laboratory' =>
+          category == RoomCategory.laboratory || title.contains('lab'),
+        'Restroom' => category == RoomCategory.restroom ||
+            title.contains('restroom') ||
+            title.contains('toilet'),
+        'Parking' =>
+          category == RoomCategory.parking || title.contains('parking'),
+        'Food' => RegExp(r'food|canteen|cafeteria|dining').hasMatch(title),
+        'Facility' => category == RoomCategory.facility ||
+            category == RoomCategory.studyArea,
+        'Campus services' => category == RoomCategory.administrative ||
+            category == RoomCategory.office ||
+            RegExp(r'clinic|library|registrar|cashier|guidance')
+                .hasMatch(title),
+        _ => matchesCategory(b, filter),
+      };
+    }
+    final rooms = includeContents ? b.rooms : const <CampusRoom>[];
+
+    final name = b.name.toLowerCase();
+    final acronym = b.acronym.toLowerCase();
+    final category = b.category.toLowerCase();
+    final description = b.description.toLowerCase();
+    final combined = '$category $name $acronym $description';
+
+    final isParkingLocation = b.isParking ||
+        category.contains('parking') ||
+        name.contains('parking') ||
+        acronym.contains('parking');
+
+    if (filter == 'Parking' || filter == 'Parkings') {
+      return isParkingLocation ||
+          rooms.any((r) =>
+              r.category == RoomCategory.parking ||
+              r.title.toLowerCase().contains('parking'));
+    }
+
+    // Never show parking lots under non-parking category filters
+    if (isParkingLocation) return false;
+
+    switch (filter) {
+      case 'College':
+      case 'Colleges':
+        return category.contains('college') ||
+            category.contains('academic') ||
+            name.contains('college') ||
+            name.contains('school') ||
+            name.contains('institute') ||
+            const {
+              'ccsict',
+              'coe',
+              'cbapa',
+              'ca',
+              'ced',
+              'cas',
+              'ccje',
+              'cf',
+              'con',
+              'svm',
+            }.contains(acronym);
+
+      case 'Campus services':
+        return category.contains('service') ||
+            category.contains('admin') ||
+            combined.contains('campus service') ||
+            combined.contains('administration') ||
+            combined.contains('osas') ||
+            combined.contains('student affairs') ||
+            combined.contains('student service') ||
+            combined.contains('infirmary') ||
+            combined.contains('clinic') ||
+            combined.contains('health') ||
+            combined.contains('library') ||
+            combined.contains('security') ||
+            combined.contains('guard') ||
+            combined.contains('registrar') ||
+            combined.contains('cashier') ||
+            combined.contains('guidance') ||
+            rooms.any((r) {
+              final rt = r.title.toLowerCase();
+              return r.category == RoomCategory.administrative ||
+                  rt.contains('service') ||
+                  rt.contains('registrar') ||
+                  rt.contains('cashier') ||
+                  rt.contains('clinic') ||
+                  rt.contains('osas') ||
+                  rt.contains('guidance');
+            });
+
+      case 'Food':
+        return category.contains('food') ||
+            combined.contains('canteen') ||
+            combined.contains('cafeteria') ||
+            combined.contains('food') ||
+            combined.contains('dining') ||
+            combined.contains('eatery') ||
+            rooms.any((r) {
+              final rt = r.title.toLowerCase();
+              return rt.contains('canteen') ||
+                  rt.contains('cafeteria') ||
+                  rt.contains('food');
+            });
+
+      case 'Facility':
+        return category.contains('facility') ||
+            category.contains('facilities') ||
+            combined.contains('gym') ||
+            combined.contains('grandstand') ||
+            combined.contains('auditorium') ||
+            combined.contains('oval') ||
+            combined.contains('court') ||
+            combined.contains('dorm') ||
+            combined.contains('hostel') ||
+            combined.contains('chapel') ||
+            combined.contains('church') ||
+            combined.contains('center') ||
+            combined.contains('hall') ||
+            rooms.any((r) =>
+                r.category == RoomCategory.facility ||
+                r.category == RoomCategory.studyArea ||
+                r.title.toLowerCase().contains('facility'));
+
+      case 'Room':
+        return category == 'room' ||
+            rooms.any((r) =>
+                r.category == RoomCategory.room ||
+                r.category == RoomCategory.classroom ||
+                r.title.toLowerCase().contains('room'));
+
+      case 'Office':
+        return category.contains('office') ||
+            category.contains('admin') ||
+            name.contains('office') ||
+            name.contains('administration') ||
+            rooms.any((r) =>
+                r.category == RoomCategory.office ||
+                r.category == RoomCategory.administrative ||
+                r.category == RoomCategory.faculty ||
+                r.title.toLowerCase().contains('office'));
+
+      case 'Laboratory':
+        return category.contains('lab') ||
+            name.contains('lab') ||
+            rooms.any((r) =>
+                r.category == RoomCategory.laboratory ||
+                r.title.toLowerCase().contains('lab'));
+
+      case 'Restroom':
+        final hasCrWord = RegExp(r'cr').hasMatch(combined);
+        return category.contains('restroom') ||
+            combined.contains('restroom') ||
+            combined.contains('comfort room') ||
+            combined.contains('toilet') ||
+            combined.contains('washroom') ||
+            hasCrWord ||
+            rooms.any((r) {
+              final rt = r.title.toLowerCase();
+              final rd = (r.description ?? '').toLowerCase();
+              return r.category == RoomCategory.restroom ||
+                  rt.contains('restroom') ||
+                  rt.contains('comfort room') ||
+                  rt.contains('toilet') ||
+                  rt.contains('washroom') ||
+                  RegExp(r'cr').hasMatch(rt) ||
+                  RegExp(r'cr').hasMatch(rd);
+            });
+
+      case 'Shaded':
+        return b.hasShadedPath;
+
+      default:
+        return true;
+    }
+  }
+
   static String normalize(String text) {
     var s = text.toLowerCase().replaceAll(RegExp(r"['’]"), '');
     s = s.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
@@ -102,7 +290,7 @@ class CampusSearch {
 
   static List<CampusSearchResult> search(
       List<CampusBuilding> buildings, String query,
-      {LatLng? origin}) {
+      {LatLng? origin, String category = 'All'}) {
     var q = normalize(query);
     if (q.isEmpty) return [];
     // Select the longest explicit building alias before removing scope words.
@@ -165,6 +353,8 @@ class CampusSearch {
               _contains(normalize('${b.name} ${b.keywords}'), scopePhrase));
       if (!scopeMatch) continue;
       void consider(CampusRoom? room) {
+        if (!matchesCategory(b, category, room: room, includeContents: false))
+          return;
         if (tokens.isEmpty && room != null) return;
         final title = normalize(room?.title ?? b.name);
         // Building keywords often list contained offices: use only indoor

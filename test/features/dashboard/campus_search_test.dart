@@ -51,6 +51,25 @@ void main() {
       },
     ]),
   ];
+  test('room categories are independent of other rooms in their parent', () {
+    for (final filter in ['Office', 'Laboratory', 'Room']) {
+      expect(
+          CampusSearch.search(campus, 'restroom', category: filter), isEmpty);
+    }
+    expect(CampusSearch.search(campus, 'dean office', category: 'Office'),
+        isNotEmpty);
+    expect(CampusSearch.search(campus, 'restroom', category: 'Restroom'),
+        hasLength(2));
+  });
+  test('import identifiers never become destination labels', () {
+    final imported = CampusBuilding.fromJson(
+        {'id': '7', 'name': 'Main Library', 'acronym': 'OSM-WAY-153312461'});
+    expect(imported.shortLabel, 'Main Library');
+    expect(imported.displayAcronym, isEmpty);
+    final curated = CampusBuilding.fromJson(
+        {'id': '1', 'name': 'Computing', 'acronym': 'CCSICT'});
+    expect(curated.shortLabel, 'CCSICT');
+  });
   test('purpose phrase finds cashier and excludes parent keyword result', () {
     final r = CampusSearch.search(campus, 'Where can I pay for tuition?');
     expect(r.map((r) => r.room?.id), ['41']);
