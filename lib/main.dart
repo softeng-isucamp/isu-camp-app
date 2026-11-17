@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/app_theme.dart';
 import 'features/auth/screens/get_started_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/services/account_session.dart';
@@ -39,7 +40,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'KUMPAS',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true),
+      theme: AppTheme.light,
       navigatorKey: AccountSession.navigatorKey,
       home: FutureBuilder<LaunchSession>(
         future: AccountSession.restoreOnLaunch(),

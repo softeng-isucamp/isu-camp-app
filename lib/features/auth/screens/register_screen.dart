@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/app_motion.dart';
 import 'package:isu_camp_app/core/error_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -20,6 +21,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _entranceStarted = false;
 
   // Header Animation
   late final Animation<double> _headerFade;
@@ -73,7 +75,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: AppMotion.entrance,
     );
 
     _headerFade = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -83,7 +85,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       ),
     );
     _headerSlide = Tween<Offset>(
-      begin: const Offset(0.0, -0.20),
+      begin: const Offset(0.0, -0.02),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(
@@ -92,7 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       ),
     );
 
-    _cardScale = Tween<double>(begin: 0.85, end: 1.0).animate(
+    _cardScale = Tween<double>(begin: 0.97, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.20, 0.85, curve: Curves.easeOutQuart),
@@ -109,22 +111,31 @@ class _RegisterScreenState extends State<RegisterScreen>
     _cardFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.20, 0.65, curve: Curves.easeIn),
+        curve: const Interval(0.20, 0.65, curve: Curves.easeOutCubic),
       ),
     );
 
     _footerFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.60, 1.0, curve: Curves.easeIn),
+        curve: const Interval(0.60, 1.0, curve: Curves.easeOutCubic),
       ),
     );
-
-    _controller.forward();
 
     _passwordController.addListener(_validatePasswordRequirements);
     _security = VerificationSecurityController(onTimeout: _handleTimeout)
       ..addListener(_refreshSecurityState);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduced(context)) {
+      _controller.value = 1;
+    } else if (!_entranceStarted) {
+      _controller.forward();
+    }
+    _entranceStarted = true;
   }
 
   void _refreshSecurityState() {
@@ -1621,7 +1632,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 _buildStepIndicator(),
                                 const SizedBox(height: 18),
                                 AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 320),
+                                  duration: AppMotion.duration(
+                                      context, AppMotion.entrance),
                                   switchInCurve: Curves.easeOutCubic,
                                   switchOutCurve: Curves.easeInCubic,
                                   transitionBuilder: (child, animation) {

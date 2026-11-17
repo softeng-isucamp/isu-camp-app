@@ -1,3 +1,4 @@
+import 'package:isu_camp_app/core/app_motion.dart';
 import 'package:isu_camp_app/core/error_messages.dart';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
@@ -366,11 +367,7 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
   void didUpdateWidget(covariant SearchResultsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.query != widget.query && _sheetController.isAttached) {
-      _sheetController.animateTo(
-        _initialSheetSize,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
+      _sheetController.jumpTo(_initialSheetSize);
     }
   }
 
@@ -386,11 +383,7 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
     final targetSize = currentSize <= (_minSheetSize + 0.08)
         ? _initialSheetSize
         : _minSheetSize;
-    _sheetController.animateTo(
-      targetSize,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    AppMotion.settleSheet(context, _sheetController, targetSize);
   }
 
   void _handleHeaderVerticalDragUpdate(
@@ -415,19 +408,14 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
       target =
           snaps.firstWhere((s) => s > current, orElse: () => _maxSheetSize);
     } else if (velocity > 350) {
-      target =
-          snaps.lastWhere((s) => s < current, orElse: () => _minSheetSize);
+      target = snaps.lastWhere((s) => s < current, orElse: () => _minSheetSize);
     } else {
       target = snaps.reduce(
         (a, b) => (a - current).abs() < (b - current).abs() ? a : b,
       );
     }
 
-    _sheetController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    AppMotion.settleSheet(context, _sheetController, target);
   }
 
   @override
@@ -452,6 +440,9 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
           minChildSize: _minSheetSize,
           maxChildSize: _maxSheetSize,
           snap: true,
+          snapAnimationDuration: AppMotion.reduced(context)
+              ? const Duration(milliseconds: 1)
+              : AppMotion.sheet,
           snapSizes: const [_minSheetSize, _initialSheetSize, _maxSheetSize],
           builder: (context, scrollController) {
             return Container(
@@ -472,6 +463,8 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _toggleSheetPosition,
+                    onVerticalDragStart: (_) =>
+                        AppMotion.catchSheet(_sheetController),
                     onVerticalDragUpdate: (details) =>
                         _handleHeaderVerticalDragUpdate(details, screenHeight),
                     onVerticalDragEnd: _handleHeaderVerticalDragEnd,
@@ -508,20 +501,13 @@ class _SearchResultsSheetState extends State<SearchResultsSheet> {
                                 ),
                               ),
                               if (widget.onClose != null)
-                                GestureDetector(
-                                  onTap: widget.onClose,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.close,
-                                      size: 18,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
+                                IconButton(
+                                  tooltip: 'Close search results',
+                                  onPressed: widget.onClose,
+                                  constraints: const BoxConstraints(
+                                      minWidth: 48, minHeight: 48),
+                                  icon: const Icon(Icons.close,
+                                      size: 18, color: Colors.black54),
                                 ),
                             ],
                           ),
@@ -726,7 +712,8 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
 
   CampusBuilding get building => widget.building;
   VoidCallback get onDirectionsTap => widget.onDirectionsTap;
-  ValueChanged<CampusRoom> get onRoomDirectionsTap => widget.onRoomDirectionsTap;
+  ValueChanged<CampusRoom> get onRoomDirectionsTap =>
+      widget.onRoomDirectionsTap;
   VoidCallback? get onClose => widget.onClose;
 
   @override
@@ -734,11 +721,7 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.building.id != widget.building.id &&
         _sheetController.isAttached) {
-      _sheetController.animateTo(
-        _initialSheetSize,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
+      AppMotion.settleSheet(context, _sheetController, _initialSheetSize);
     }
   }
 
@@ -751,13 +734,10 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
   void _toggleSheetPosition() {
     if (!_sheetController.isAttached) return;
     final currentSize = _sheetController.size;
-    final targetSize =
-        currentSize <= (_minSheetSize + 0.08) ? _initialSheetSize : _minSheetSize;
-    _sheetController.animateTo(
-      targetSize,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    final targetSize = currentSize <= (_minSheetSize + 0.08)
+        ? _initialSheetSize
+        : _minSheetSize;
+    AppMotion.settleSheet(context, _sheetController, targetSize);
   }
 
   void _handleHeaderVerticalDragUpdate(
@@ -779,7 +759,8 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
 
     double target;
     if (velocity < -350) {
-      target = snaps.firstWhere((s) => s > current, orElse: () => _maxSheetSize);
+      target =
+          snaps.firstWhere((s) => s > current, orElse: () => _maxSheetSize);
     } else if (velocity > 350) {
       target = snaps.lastWhere((s) => s < current, orElse: () => _minSheetSize);
     } else {
@@ -788,11 +769,7 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
       );
     }
 
-    _sheetController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    AppMotion.settleSheet(context, _sheetController, target);
   }
 
   @override
@@ -817,6 +794,9 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
           minChildSize: _minSheetSize,
           maxChildSize: _maxSheetSize,
           snap: true,
+          snapAnimationDuration: AppMotion.reduced(context)
+              ? const Duration(milliseconds: 1)
+              : AppMotion.sheet,
           snapSizes: const [_minSheetSize, _initialSheetSize, _maxSheetSize],
           builder: (context, scrollController) {
             return Container(
@@ -837,6 +817,8 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _toggleSheetPosition,
+                    onVerticalDragStart: (_) =>
+                        AppMotion.catchSheet(_sheetController),
                     onVerticalDragUpdate: (details) =>
                         _handleHeaderVerticalDragUpdate(details, screenHeight),
                     onVerticalDragEnd: _handleHeaderVerticalDragEnd,
@@ -859,30 +841,26 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
+                              Expanded(
+                                  child: Text(
                                 'BUILDING DETAILS',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.montserrat(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.grey.shade600,
                                   letterSpacing: 0.5,
                                 ),
-                              ),
+                              )),
                               if (onClose != null)
-                                GestureDetector(
-                                  onTap: onClose,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.close,
-                                      size: 18,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
+                                IconButton(
+                                  tooltip: 'Close building details',
+                                  onPressed: onClose,
+                                  constraints: const BoxConstraints(
+                                      minWidth: 48, minHeight: 48),
+                                  icon: const Icon(Icons.close,
+                                      size: 18, color: Colors.black54),
                                 ),
                             ],
                           ),
@@ -901,246 +879,258 @@ class _BuildingDetailsSheetState extends State<BuildingDetailsSheet> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-
-            // Building Image with rounded corners
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 160,
-                width: double.infinity,
-                color: Colors.grey.shade200,
-                child: LocationPhoto(imageUrl: building.imageUrl),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Title & Subtitle + Green "DIRECTIONS" Button Row
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        building.name,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F4D20),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        building.category,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: onDirectionsTap,
-                  icon: const Icon(Icons.directions,
-                      size: 16, color: Colors.white),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F5A28),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 11,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 2,
-                  ),
-                  label: Text(
-                    'DIRECTIONS',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            if (building.description.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                building.description,
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  color: Colors.grey.shade700,
-                  height: 1.4,
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 14),
-
-            // Rooms & Laboratories Section (Scrollable)
-            Row(
-              children: [
-                const Icon(
-                  Icons.meeting_room_outlined,
-                  size: 18,
-                  color: Color(0xFF0F5A28),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Rooms & Facilities (${building.rooms.length})',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF0F4D20),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            if (building.rooms.isNotEmpty)
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: building.rooms.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final room = building.rooms[index];
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7FAF8),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF0F751B).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                          // Building Image with rounded corners
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              height: 160,
+                              width: double.infinity,
+                              color: Colors.grey.shade200,
+                              child: LocationPhoto(imageUrl: building.imageUrl),
+                            ),
                           ),
-                          child: Icon(
-                            room.icon,
-                            color: const Color(0xFF0F751B),
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+
+                          const SizedBox(height: 14),
+
+                          // Title & Subtitle + Green "DIRECTIONS" Button Row
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Text(
-                                room.title,
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.black87,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      building.name,
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF0F4D20),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      building.category,
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                room.floor,
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade600,
+                              const SizedBox(width: 12),
+                              ElevatedButton.icon(
+                                onPressed: onDirectionsTap,
+                                icon: const Icon(Icons.directions,
+                                    size: 16, color: Colors.white),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0F5A28),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 11,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  elevation: 2,
+                                ),
+                                label: Text(
+                                  'DIRECTIONS',
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFECC700)
-                                    .withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                room.category.name.toUpperCase(),
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.brown.shade800,
-                                ),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () async {
-                                final navigate = await showDialog<bool>(
-                                  context: context,
-                                  builder: (_) => IndoorLocationDetailsDialog(
-                                    building: building,
-                                    room: room,
-                                  ),
-                                );
-                                if (navigate == true && context.mounted) {
-                                  onRoomDirectionsTap(room);
-                                }
-                              },
-                              icon: const Icon(Icons.info_outline, size: 16),
-                              label: const Text('Details'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF0F5A28),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                textStyle: GoogleFonts.montserrat(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
+
+                          if (building.description.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              building.description,
+                              style: GoogleFonts.montserrat(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                                height: 1.4,
                               ),
                             ),
                           ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              )
-            else
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Text(
-                  'No interior rooms or offices in this facility.',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade600,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
+
+                          const SizedBox(height: 16),
+                          const Divider(height: 1),
+                          const SizedBox(height: 14),
+
+                          // Rooms & Laboratories Section (Scrollable)
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.meeting_room_outlined,
+                                size: 18,
+                                color: Color(0xFF0F5A28),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Rooms & Facilities (${building.rooms.length})',
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F4D20),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          if (building.rooms.isNotEmpty)
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: building.rooms.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final room = building.rooms[index];
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF7FAF8),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border:
+                                        Border.all(color: Colors.grey.shade200),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0F751B)
+                                              .withValues(alpha: 0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          room.icon,
+                                          color: const Color(0xFF0F751B),
+                                          size: 18,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              room.title,
+                                              style: GoogleFonts.montserrat(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              room.floor,
+                                              style: GoogleFonts.montserrat(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFECC700)
+                                                  .withValues(alpha: 0.18),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              room.category.name.toUpperCase(),
+                                              style: GoogleFonts.montserrat(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.brown.shade800,
+                                              ),
+                                            ),
+                                          ),
+                                          TextButton.icon(
+                                            onPressed: () async {
+                                              final navigate =
+                                                  await showDialog<bool>(
+                                                context: context,
+                                                builder: (_) =>
+                                                    IndoorLocationDetailsDialog(
+                                                  building: building,
+                                                  room: room,
+                                                ),
+                                              );
+                                              if (navigate == true &&
+                                                  context.mounted) {
+                                                onRoomDirectionsTap(room);
+                                              }
+                                            },
+                                            icon: const Icon(Icons.info_outline,
+                                                size: 16),
+                                            label: const Text('Details'),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor:
+                                                  const Color(0xFF0F5A28),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                              ),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              textStyle: GoogleFonts.montserrat(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            )
+                          else
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Text(
+                                'No interior rooms or offices in this facility.',
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 11.5,
+                                  color: Colors.grey.shade600,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1567,7 +1557,8 @@ class _ChooseRouteSheetState extends State<ChooseRouteSheet> {
       if (!mounted || requestVersion != _routeRequestVersion) return;
       setState(() {
         _loading = false;
-        _error = ErrorMessages.present(error, 'Could not find a route. Please try again.');
+        _error = ErrorMessages.present(
+            error, 'Could not find a route. Please try again.');
       });
     }
   }
@@ -2685,6 +2676,38 @@ class RouteDetailsSheet extends StatelessWidget {
 // =========================================================================
 // 4. STEP-BY-STEP ROUTE PREVIEW
 // =========================================================================
+// Panels share the available height, so large text cannot cover a control on
+// the opposite edge. Only overflowing panel content scrolls; the map stays
+// interactive in the space between them.
+class _NavigationHudLayout extends StatelessWidget {
+  final Widget top;
+  final Widget bottom;
+
+  const _NavigationHudLayout({required this.top, required this.bottom});
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        minimum: const EdgeInsets.symmetric(vertical: 10),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            children: [
+              ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: constraints.maxHeight * 0.4),
+                child: SingleChildScrollView(child: top),
+              ),
+              const Expanded(child: SizedBox.expand()),
+              ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: constraints.maxHeight * 0.5),
+                child: SingleChildScrollView(child: bottom),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class RoutePreviewHud extends StatelessWidget {
   final WalkingRoute route;
   final RouteType selectedRouteType;
@@ -2709,7 +2732,6 @@ class RoutePreviewHud extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = MediaQuery.of(context).padding.top;
     final isArrival = onNext == null;
     final routeTypeLabel = selectedRouteType == RouteType.shortest
         ? 'Shortest Route'
@@ -2724,71 +2746,147 @@ class RoutePreviewHud extends StatelessWidget {
         ? const Color(0xFFECC700)
         : const Color(0xFF0F751B);
 
-    return Stack(
-      children: [
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: EdgeInsets.fromLTRB(12, topPadding + 6, 16, 16),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.98),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 12,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'Back to route details',
-                      onPressed: onBack,
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: Color(0xFF0B351E),
-                      ),
+    return _NavigationHudLayout(
+      top: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 6, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.98),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 12,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back to route details',
+                    onPressed: onBack,
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF0B351E),
                     ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        'Route Preview',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0B351E),
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${currentStepIndex + 1}/$totalSteps',
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Route Preview',
                       style: GoogleFonts.montserrat(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0F751B),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0B351E),
                       ),
                     ),
-                  ],
+                  ),
+                  Text(
+                    '${currentStepIndex + 1}/$totalSteps',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF0F751B),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(color: Color(0xFFDDE7E0), height: 18),
+              Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF7EE),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      routeInstructionIcon(step.instruction),
+                      color: const Color(0xFF0F751B),
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          step.instruction,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0B351E),
+                          ),
+                        ),
+                        if (step.distanceMeters > 0) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            step.distance,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 13,
+                              color: const Color(0xFF52705E),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      bottom: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 15, 18, 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.98),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFDDE7E0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
-                const Divider(color: Color(0xFFDDE7E0), height: 18),
-                Row(
+                child: Row(
                   children: [
                     Container(
-                      width: 46,
-                      height: 46,
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEAF7EE),
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 7,
+                          ),
+                        ],
                       ),
                       child: Icon(
-                        routeInstructionIcon(step.instruction),
-                        color: const Color(0xFF0F751B),
+                        routeIcon,
+                        color: routeIconColor,
                         size: 30,
                       ),
                     ),
@@ -2798,182 +2896,103 @@ class RoutePreviewHud extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            step.instruction,
+                            routeTypeLabel,
                             style: GoogleFonts.montserrat(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0B351E),
+                              color: const Color(0xFF1F1F1F),
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
-                          if (step.distanceMeters > 0) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              step.distance,
-                              style: GoogleFonts.montserrat(
-                                fontSize: 13,
-                                color: const Color(0xFF52705E),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 20,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 15, 18, 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.98),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFDDE7E0)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 14,
-                  offset: Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF9FAFB),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(13),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 7,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          routeIcon,
-                          color: routeIconColor,
-                          size: 30,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              routeTypeLabel,
-                              style: GoogleFonts.montserrat(
-                                color: const Color(0xFF1F1F1F),
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Text(
-                              routeSubtitle,
-                              style: GoogleFonts.montserrat(
-                                color: Colors.grey.shade600,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Distance: ${route.distance}',
-                              style: GoogleFonts.montserrat(
-                                color: const Color(0xFF1F1F1F),
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
                           Text(
-                            'Est: ${route.time}',
+                            routeSubtitle,
+                            style: GoogleFonts.montserrat(
+                              color: Colors.grey.shade600,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Distance: ${route.distance}',
                             style: GoogleFonts.montserrat(
                               color: const Color(0xFF1F1F1F),
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Time of\nArrival: ${route.arrivalTime}',
-                            textAlign: TextAlign.right,
-                            style: GoogleFonts.montserrat(
-                              color: Colors.grey.shade600,
-                              fontSize: 10.5,
-                            ),
-                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const Divider(color: Color(0xFFDDE7E0), height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton.filled(
-                      tooltip: 'Previous step',
-                      onPressed: onPrevious,
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFEAF7EE),
-                        disabledBackgroundColor: const Color(0xFFF0F3F1),
-                      ),
-                      icon: const Icon(Icons.chevron_left),
-                      color: const Color(0xFF0F751B),
-                      disabledColor: Colors.grey.shade400,
                     ),
-                    Text(
-                      isArrival
-                          ? 'Destination reached'
-                          : 'Step ${currentStepIndex + 1} of $totalSteps',
-                      style: GoogleFonts.montserrat(
-                        color: const Color(0xFF0B351E),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton.filled(
-                      tooltip: 'Next step',
-                      onPressed: onNext,
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F751B),
-                        disabledBackgroundColor: const Color(0xFFF0F3F1),
-                      ),
-                      icon: const Icon(Icons.chevron_right),
-                      color: Colors.white,
-                      disabledColor: Colors.grey.shade400,
-                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                        child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Est: ${route.time}',
+                          style: GoogleFonts.montserrat(
+                            color: const Color(0xFF1F1F1F),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Time of\nArrival: ${route.arrivalTime}',
+                          textAlign: TextAlign.right,
+                          style: GoogleFonts.montserrat(
+                            color: Colors.grey.shade600,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    )),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const Divider(color: Color(0xFFDDE7E0), height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton.filled(
+                    tooltip: 'Previous step',
+                    onPressed: onPrevious,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFEAF7EE),
+                      disabledBackgroundColor: const Color(0xFFF0F3F1),
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                    color: const Color(0xFF0F751B),
+                    disabledColor: Colors.grey.shade400,
+                  ),
+                  Expanded(
+                      child: Text(
+                    textAlign: TextAlign.center,
+                    isArrival
+                        ? 'Destination reached'
+                        : 'Step ${currentStepIndex + 1} of $totalSteps',
+                    style: GoogleFonts.montserrat(
+                      color: const Color(0xFF0B351E),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )),
+                  IconButton.filled(
+                    tooltip: 'Next step',
+                    onPressed: onNext,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F751B),
+                      disabledBackgroundColor: const Color(0xFFF0F3F1),
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                    color: Colors.white,
+                    disabledColor: Colors.grey.shade400,
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -2992,6 +3011,7 @@ class ActiveNavigationHud extends StatelessWidget {
   final NavigationProgress? progress;
   final String? navigationStatus;
   final VoidCallback onRecenter;
+  final bool isFollowing;
   final VoidCallback? onRetryRoute;
 
   const ActiveNavigationHud({
@@ -3006,12 +3026,12 @@ class ActiveNavigationHud extends StatelessWidget {
     this.progress,
     this.navigationStatus,
     required this.onRecenter,
+    this.isFollowing = true,
     this.onRetryRoute,
   });
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = MediaQuery.of(context).padding.top;
     final distance =
         '${(progress?.remainingMeters ?? route.distanceMeters).round()} m remaining';
     final time =
@@ -3025,58 +3045,59 @@ class ActiveNavigationHud extends StatelessWidget {
     final arrivalLabel =
         '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
 
-    return Stack(
-      children: [
-        // 1. Top Turn-by-Turn Guidance Banner
-        Positioned(
-          top: topPadding + 10,
-          left: 16,
-          right: 16,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF374151).withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+    return _NavigationHudLayout(
+      top: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF374151).withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    routeInstructionIcon(heading),
-                    color: Colors.white,
-                    size: 32,
-                  ),
+                child: Icon(
+                  navigationStatus != null
+                      ? Icons.info_outline
+                      : progress == null
+                          ? Icons.gps_not_fixed
+                          : routeInstructionIcon(heading),
+                  color: Colors.white,
+                  size: 32,
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        heading,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      heading,
+                      style: GoogleFonts.montserrat(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
+                    ),
+                    if (navigationStatus == null && progress != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        '${(progress?.instructionMeters ?? route.distanceMeters).round()} m · $distance',
+                        '${progress!.instructionMeters.round()} m · $distance',
                         style: GoogleFonts.montserrat(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -3084,51 +3105,39 @@ class ActiveNavigationHud extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-
-        // Recenter on the live location; arrival is detected from GPS.
-        Positioned(
-          right: 18,
-          bottom: 230,
-          child: GestureDetector(
-            onTap: onRecenter,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Transform.rotate(
-                angle: 0.5,
-                child: const Icon(
-                  Icons.navigation,
-                  color: Color(0xFF0F751B),
-                  size: 26,
+      ),
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16, bottom: 12),
+              child: IconButton.filled(
+                key: const ValueKey('navigation-recenter'),
+                tooltip: isFollowing
+                    ? 'Following your direction'
+                    : 'Recenter and follow direction',
+                onPressed: onRecenter,
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  backgroundColor:
+                      isFollowing ? const Color(0xFF2563EB) : Colors.white,
+                  foregroundColor:
+                      isFollowing ? Colors.white : const Color(0xFF2563EB),
                 ),
+                icon: Icon(isFollowing ? Icons.navigation : Icons.my_location),
               ),
             ),
           ),
-        ),
-
-        // 3. Bottom Dark Status Card
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 34),
+          Container(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
             decoration: const BoxDecoration(
               color: Color(0xFF262626),
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -3174,8 +3183,6 @@ class ActiveNavigationHud extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             '${routeModeLabel(selectedTransportMode)} · From ${origin.label} · Arrival $arrivalLabel',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.montserrat(
                               fontSize: 10.5,
                               color: Colors.grey.shade400,
@@ -3184,6 +3191,7 @@ class ActiveNavigationHud extends StatelessWidget {
                         ],
                       ),
                     ),
+                    const SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -3228,6 +3236,7 @@ class ActiveNavigationHud extends StatelessWidget {
                 if (onRetryRoute != null)
                   TextButton.icon(
                     onPressed: onRetryRoute,
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry route',
                         style: TextStyle(color: Colors.white)),
@@ -3236,10 +3245,12 @@ class ActiveNavigationHud extends StatelessWidget {
                 // Red "End Route" Button
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
                   child: ElevatedButton(
                     onPressed: onEndRoute,
                     style: ElevatedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                       backgroundColor: const Color(0xFFDC2626),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -3259,8 +3270,8 @@ class ActiveNavigationHud extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -3282,108 +3293,98 @@ class ArrivalHud extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = MediaQuery.of(context).padding.top;
-
-    return Stack(
-      children: [
-        // 1. Top "You've Arrived!" Banner Card
-        Positioned(
-          top: topPadding + 10,
-          left: 16,
-          right: 16,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF374151).withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        destinationRoom == null
-                            ? "You've Arrived!"
-                            : 'Arrived at building entrance',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        destinationRoom == null
-                            ? destination.name
-                            : '${destination.name} • '
-                                '${destinationRoom!.title}, '
-                                '${destinationRoom!.floor}',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // 2. Bottom "Finish" Green Button
-        Positioned(
-          bottom: 30,
-          left: 40,
-          right: 40,
-          child: SizedBox(
-            height: 48,
-            child: ElevatedButton(
-              onPressed: onFinish,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F5A28),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 3,
+    return _NavigationHudLayout(
+      top: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF374151).withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
-              child: Text(
-                'Finish',
-                style: GoogleFonts.montserrat(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.location_on,
                   color: Colors.white,
+                  size: 32,
                 ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      destinationRoom == null
+                          ? "You've Arrived!"
+                          : 'Arrived at building entrance',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      destinationRoom == null
+                          ? destination.name
+                          : '${destination.name} • '
+                              '${destinationRoom!.title}, '
+                              '${destinationRoom!.floor}',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      bottom: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: SizedBox(
+          child: ElevatedButton(
+            onPressed: onFinish,
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              backgroundColor: const Color(0xFF0F5A28),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 3,
+            ),
+            child: Text(
+              'Finish',
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
