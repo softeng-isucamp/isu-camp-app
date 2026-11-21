@@ -47,6 +47,24 @@ updated backend to enable these URLs. When running behind a reverse proxy,
 preserve the external Host and configure trusted forwarded HTTPS headers so the
 returned URLs use the same public API origin as the app.
 
+### Web release build
+
+Build the web app with WebAssembly:
+
+```powershell
+flutter build web --release --wasm --dart-define=API_BASE_URL=https://api.kumpas.live
+```
+
+`--wasm` also emits the JavaScript build. Browsers with WasmGC (current Chrome,
+Edge and Firefox, Safari 18.2+) load `main.dart.wasm`; the rest fall back to
+`main.dart.js` automatically. Deploy the whole `build/web` folder. On a
+throttled mobile Lighthouse run the Wasm build drew the first screen about
+3.5 s sooner than the JavaScript one and transferred 740 KB less.
+
+`web/index.html` shows a splash that matches Get Started until Flutter draws
+its first frame. If Get Started's background or logo changes, update the
+splash too.
+
 ### Offline mode
 
 Users turn offline mode on from **Profile → Offline Map → Download**. The

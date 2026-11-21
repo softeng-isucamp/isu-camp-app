@@ -18,21 +18,90 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="KUMPAS, the ISU Echague campus map and navigator.">
+  <meta name="theme-color" content="#0F3B1A">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="flutter_application_1">
+  <meta name="apple-mobile-web-app-title" content="KUMPAS">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>flutter_application_1</title>
+  <title>KUMPAS</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    The Flutter engine (CanvasKit or Skwasm) and the fallback fonts come from
+    gstatic. Opening those connections now saves a DNS, TCP and TLS round trip
+    on the critical path, which is most of a second on a mobile network.
+  -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!--
+    The first screen's images. Flutter asks for the same URLs once it starts,
+    so these downloads are reused instead of waiting for the engine.
+  -->
+  <link rel="preload" as="image" href="assets/assets/images/Appdev_background1.webp" fetchpriority="high">
+  <link rel="preload" as="image" href="assets/assets/images/logo_kumpas_app.webp">
+
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #0F3B1A;
+    }
+
+    /*
+      Shown from the first byte until Flutter draws its first frame, so the
+      page is never a blank white screen while the engine downloads. It mirrors
+      the Get Started screen: the same background and the logo at 44% height.
+    */
+    #splash {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: #0F3B1A url("assets/assets/images/Appdev_background1.webp") center / cover no-repeat;
+      transition: opacity 200ms ease-out;
+      pointer-events: none;
+    }
+
+    #splash img {
+      position: absolute;
+      top: 44%;
+      left: 50%;
+      width: min(400px, 92vw);
+      height: auto;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    #splash.done {
+      opacity: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #splash { transition: none; }
+    }
+  </style>
 </head>
 <body>
+  <div id="splash" aria-hidden="true">
+    <img src="assets/assets/images/logo_kumpas_app.webp" alt="" decoding="async">
+  </div>
+  <script>
+    // Flutter dispatches this once its first frame is on screen.
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('splash');
+      if (!splash) return;
+      splash.classList.add('done');
+      setTimeout(function () { splash.remove(); }, 250);
+    }, { once: true });
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
