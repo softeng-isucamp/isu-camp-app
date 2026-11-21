@@ -67,16 +67,39 @@ class AccountSession {
   /// Restores a remembered session and, when the server can be reached, asks it
   /// whether the account is still active. Only the deactivation signal signs the
   /// user out; offline, timeouts and server errors keep the session.
-  static Future<LaunchSession> restoreOnLaunch(
-      {Duration timeout = const Duration(seconds: 5)}) async {
+  ///
+  /// The app waits at most [waitAtMost] for that answer before opening signed
+  /// in, so a slow network doesn't hold launch on a spinner. A deactivation
+  /// that arrives later still signs the user out from whatever screen is open.
+  static Future<LaunchSession> restoreOnLaunch({
+    Duration timeout = const Duration(seconds: 5),
+    Duration waitAtMost = const Duration(milliseconds: 400),
+  }) async {
     if (!await RememberedSessionStore.restore()) return LaunchSession.signedOut;
+    var opened = false;
+    final check = _checkActive(timeout, openedEarly: () => opened);
+    return Future.any([
+      check,
+      Future.delayed(waitAtMost, () {
+        opened = true;
+        return LaunchSession.signedIn;
+      }),
+    ]);
+  }
+
+  static Future<LaunchSession> _checkActive(Duration timeout,
+      {required bool Function() openedEarly}) async {
     try {
       final response = await http.get(
         Uri.parse('${AuthService.baseUrl}/profile'),
         headers: {'Authorization': 'Bearer ${UserSession.accessToken}'},
       ).timeout(timeout);
       if (isDeactivated(response)) {
-        await _clearSession();
+        if (openedEarly()) {
+          await signOutDeactivated();
+        } else {
+          await _clearSession();
+        }
         return LaunchSession.deactivated;
       }
     } catch (_) {

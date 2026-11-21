@@ -28,8 +28,13 @@ class RememberedSessionStore {
 
   static Future<bool> restore() async {
     try {
-      final username = await _storage.read(key: _usernameKey);
-      final token = await _storage.read(key: _tokenKey);
+      // Each read is a separate trip to the platform keystore; overlap them.
+      final values = await Future.wait([
+        _storage.read(key: _usernameKey),
+        _storage.read(key: _tokenKey),
+        _storage.read(key: _emailKey),
+      ]);
+      final [username, token, email] = values;
       if (username == null ||
           username.isEmpty ||
           token == null ||
@@ -38,9 +43,7 @@ class RememberedSessionStore {
         return false;
       }
       UserSession.setLoggedInUser(
-          username: username,
-          token: token,
-          email: await _storage.read(key: _emailKey) ?? '');
+          username: username, token: token, email: email ?? '');
       return true;
     } catch (_) {
       // Storage can be unavailable (for example after an OS restore).

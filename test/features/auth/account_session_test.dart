@@ -127,6 +127,20 @@ void main() {
       }
     });
 
+    test('a slow answer opens signed in, then a deactivation signs out',
+        () async {
+      final result = await http.runWithClient(
+          () => AccountSession.restoreOnLaunch(
+              waitAtMost: const Duration(milliseconds: 50)),
+          () => MockClient((_) => Future.delayed(
+              const Duration(milliseconds: 200), () => _deactivated())));
+      expect(result, LaunchSession.signedIn);
+      expect(UserSession.accessToken, isNotNull);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(UserSession.accessToken, isNull);
+      expect(await _storedToken(), isNull);
+    });
+
     test('an active account opens signed in', () async {
       final result = await http.runWithClient(AccountSession.restoreOnLaunch,
           () => MockClient((_) async => http.Response('{"username":"Karl","email":"k@e.com"}', 200)));
