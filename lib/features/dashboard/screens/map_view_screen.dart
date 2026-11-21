@@ -38,6 +38,10 @@ double buildingLabelOpacity(double zoom) =>
 double buildingIconOpacity(double zoom, {bool isSelected = false}) =>
     isSelected ? 1.0 : ((zoom - 15.5) / 0.8).clamp(0.0, 1.0);
 
+/// Rounds a marker fade to tenths. AnimatedOpacity eases between steps, and
+/// the markers rebuild about ten times across a fade instead of every frame.
+double _fadeStep(double opacity) => (opacity * 10).round() / 10;
+
 // Shared with the offline tile download so the cache covers the whole camera.
 final LatLngBounds isuEchagueBounds = LatLngBounds(
   const LatLng(isuCampusSouth, isuCampusWest),
@@ -91,7 +95,22 @@ class _MapViewScreenState extends State<MapViewScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final MapController _mapController = MapController();
-  final ValueNotifier<double> _mapZoom = ValueNotifier(_initialCampusZoom);
+  // Marker fades derived from the zoom. They change only when the zoom
+  // crosses a fade band, so a pinch doesn't rebuild every marker per frame.
+  final ValueNotifier<double> _iconFade =
+      ValueNotifier(_fadeStep(buildingIconOpacity(_initialCampusZoom)));
+  final ValueNotifier<double> _labelFade =
+      ValueNotifier(_fadeStep(buildingLabelOpacity(_initialCampusZoom)));
+  // Built map layers, reused while what they draw is unchanged. Handing
+  // Flutter the same widget skips rebuilding every marker and reprojecting
+  // every polygon on each GPS fix, keystroke or zoom frame.
+  int _buildingsVersion = 0;
+  Object? _polygonLayerKey;
+  Widget? _polygonLayer;
+  Object? _iconLayerKey;
+  Widget? _iconLayer;
+  Object? _labelLayerKey;
+  Widget? _labelLayer;
   List<NavigationHistoryEntry> _recentHistory = [];
 
   NavigationUiState _navigationState = NavigationUiState.idle;
@@ -379,6 +398,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
       if (!mounted) return;
       setState(() {
         isuCampusBuildings.addAll(buildings);
+        _buildingsVersion++;
         _isLoadingBuildings = false;
       });
     } catch (_) {
@@ -403,7 +423,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
     _positionSubscription?.cancel();
     _gpsWatchdog?.cancel();
     _compassSubscription?.cancel();
-    _mapZoom.dispose();
+    _iconFade.dispose();
+    _labelFade.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -1963,6 +1984,193 @@ class _MapViewScreenState extends State<MapViewScreen> {
     );
   }
 
+  /// Building outlines, with the route destination drawn last so it sits
+  /// above its neighbours.
+  Widget _buildingPolygonLayer(List<CampusBuilding> buildings) {
+    final selected = _selectedBuilding;
+    final highlightedId = selected != null && _highlightsDestination(selected)
+        ? selected.id
+        : null;
+    final key = (_buildingsVersion, _idsOf(buildings), highlightedId);
+    if (key == _polygonLayerKey) return _polygonLayer!;
+    _polygonLayerKey = key;
+    return _polygonLayer = PolygonLayer(
+      // Outlines are a few points each; flutter_map 7 would otherwise
+      // re-simplify every polygon on every frame of a pan or zoom.
+      simplificationTolerance: 0,
+      polygons: [
+        ...buildings
+            .where((building) =>
+                building.polygonCoordinates.length >= 3 &&
+                building.id != highlightedId)
+            .map((building) => Polygon(
+                  points: building.polygonCoordinates,
+                  color: const Color(0xFF0F751B).withValues(alpha: 0.18),
+                  borderColor: const Color(0xFF0F751B),
+                  borderStrokeWidth: 1.5,
+                )),
+        ...buildings
+            .where((building) =>
+                building.polygonCoordinates.length >= 3 &&
+                building.id == highlightedId)
+            .map((building) => Polygon(
+                  points: building.polygonCoordinates,
+                  color: const Color(0xFFECC700).withValues(alpha: 0.32),
+                  borderColor: const Color(0xFFECC700),
+                  borderStrokeWidth: 3,
+                )),
+        Polygon(
+          points: isuEchagueMockBoundary,
+          color: const Color(0xFF0F751B).withValues(alpha: 0.05),
+          borderColor: const Color(0xFF0F751B),
+          borderStrokeWidth: 2,
+        ),
+      ],
+    );
+  }
+
+  /// Building icons. [fade] is the icon opacity for the current zoom; the
+  /// selected building always shows.
+  Widget _buildingIconLayer(List<CampusBuilding> mapBuildings, double fade) {
+    final activeCategory = _selectedCategoryFilter != 'All'
+        ? _selectedCategoryFilter
+        : _categoryFromSearchQuery(_searchController.text);
+    final key = (
+      _buildingsVersion,
+      _idsOf(mapBuildings),
+      _selectedBuilding?.id,
+      activeCategory,
+      fade,
+    );
+    if (key == _iconLayerKey) return _iconLayer!;
+    _iconLayerKey = key;
+    return _iconLayer = MarkerLayer(
+      rotate: true,
+      markers: mapBuildings.map((building) {
+        final isSelected = _selectedBuilding?.id == building.id;
+        final markerStyle = _markerStyleForCurrentFilter(building);
+        final opacity = isSelected ? 1.0 : fade;
+        return Marker(
+          key: ValueKey('building-marker-${building.id}'),
+          point: building.coordinate,
+          width: 38,
+          height: 38,
+          child: IgnorePointer(
+            ignoring: opacity == 0,
+            child: ExcludeSemantics(
+              excluding: opacity == 0,
+              child: AnimatedOpacity(
+                key: ValueKey('building-icon-${building.id}'),
+                opacity: opacity,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: Semantics(
+                  button: true,
+                  label: building.name,
+                  child: Tooltip(
+                    message: building.name,
+                    child: GestureDetector(
+                      onTap: () => _selectBuildingAndShowDetails(building),
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          width: isSelected ? 32 : 28,
+                          height: isSelected ? 32 : 28,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFECC700)
+                                : markerStyle.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: isSelected ? 2.5 : 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.24),
+                                blurRadius: isSelected ? 6 : 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            markerStyle.icon,
+                            color: isSelected ? Colors.black87 : Colors.white,
+                            size: isSelected ? 18 : 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// Building names, which fade in as the user zooms in. They never take
+  /// taps away from the icon markers underneath. Both turn around the
+  /// building's point, so the name stays below the icon on screen.
+  Widget _buildingLabelLayer(List<CampusBuilding> mapBuildings, double fade) {
+    final key = (_buildingsVersion, _idsOf(mapBuildings), fade);
+    if (key == _labelLayerKey) return _labelLayer!;
+    _labelLayerKey = key;
+    return _labelLayer = MarkerLayer(
+      rotate: true,
+      markers: mapBuildings.map((building) {
+        return Marker(
+          point: building.coordinate,
+          width: 120,
+          height: 25,
+          alignment: Alignment.topCenter,
+          child: IgnorePointer(
+            child: ExcludeSemantics(
+              child: AnimatedOpacity(
+                key: ValueKey('building-label-${building.id}'),
+                opacity: fade,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: Transform.translate(
+                  // Keep the label below the entire icon, not
+                  // across its lower half at the map anchor.
+                  offset: const Offset(0, 40),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        building.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF0B351E),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  static String _idsOf(List<CampusBuilding> buildings) =>
+      buildings.map((building) => building.id).join(',');
+
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
@@ -1999,9 +2207,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 },
                 onPositionChanged: (camera, hasGesture) {
                   final zoom = camera.zoom;
-                  if ((_mapZoom.value - zoom).abs() > 0.001) {
-                    _mapZoom.value = zoom;
-                  }
+                  _iconFade.value = _fadeStep(buildingIconOpacity(zoom));
+                  _labelFade.value = _fadeStep(buildingLabelOpacity(zoom));
                   if (hasGesture &&
                       _navigationState == NavigationUiState.navigating &&
                       _followNavigationCamera) {
@@ -2021,39 +2228,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                   tileProvider: OfflineAwareTileProvider(),
                 ),
 
-                PolygonLayer(
-                  polygons: [
-                    ...mapBuildings
-                        .where((building) =>
-                            building.polygonCoordinates.length >= 3 &&
-                            !_highlightsDestination(building))
-                        .map((building) => Polygon(
-                              points: building.polygonCoordinates,
-                              color: const Color(0xFF0F751B)
-                                  .withValues(alpha: 0.18),
-                              borderColor: const Color(0xFF0F751B),
-                              borderStrokeWidth: 1.5,
-                            )),
-                    // Drawn last so the destination sits above its neighbours.
-                    ...mapBuildings
-                        .where((building) =>
-                            building.polygonCoordinates.length >= 3 &&
-                            _highlightsDestination(building))
-                        .map((building) => Polygon(
-                              points: building.polygonCoordinates,
-                              color: const Color(0xFFECC700)
-                                  .withValues(alpha: 0.32),
-                              borderColor: const Color(0xFFECC700),
-                              borderStrokeWidth: 3,
-                            )),
-                    Polygon(
-                      points: isuEchagueMockBoundary,
-                      color: const Color(0xFF0F751B).withValues(alpha: 0.05),
-                      borderColor: const Color(0xFF0F751B),
-                      borderStrokeWidth: 2,
-                    ),
-                  ],
-                ),
+                _buildingPolygonLayer(mapBuildings),
 
                 // Active Route Polylines (if route chosen or navigating)
                 if (_walkingRoute != null &&
@@ -2080,78 +2255,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // Building names fade first; icons fade at the farthest zoom.
                 // Icons and names stay upright however the map is rotated.
                 ValueListenableBuilder<double>(
-                  valueListenable: _mapZoom,
-                  builder: (context, zoom, _) => MarkerLayer(
-                    rotate: true,
-                    markers: mapBuildings.map((building) {
-                      final isSelected = _selectedBuilding?.id == building.id;
-                      final markerStyle = _markerStyleForCurrentFilter(building);
-                      final opacity =
-                          buildingIconOpacity(zoom, isSelected: isSelected);
-                      return Marker(
-                        key: ValueKey('building-marker-${building.id}'),
-                        point: building.coordinate,
-                        width: 38,
-                        height: 38,
-                        child: IgnorePointer(
-                          ignoring: opacity == 0,
-                          child: ExcludeSemantics(
-                            excluding: opacity == 0,
-                            child: AnimatedOpacity(
-                              key: ValueKey('building-icon-${building.id}'),
-                              opacity: opacity,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                              child: Semantics(
-                                button: true,
-                                label: building.name,
-                                child: Tooltip(
-                                  message: building.name,
-                                  child: GestureDetector(
-                                    onTap: () =>
-                                        _selectBuildingAndShowDetails(building),
-                                    child: Center(
-                                      child: AnimatedContainer(
-                                        duration:
-                                            const Duration(milliseconds: 220),
-                                        width: isSelected ? 32 : 28,
-                                        height: isSelected ? 32 : 28,
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? const Color(0xFFECC700)
-                                              : markerStyle.color,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Colors.white,
-                                            width: isSelected ? 2.5 : 2,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.24),
-                                              blurRadius: isSelected ? 6 : 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Icon(
-                                          markerStyle.icon,
-                                          color: isSelected
-                                              ? Colors.black87
-                                              : Colors.white,
-                                          size: isSelected ? 18 : 16,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                  valueListenable: _iconFade,
+                  builder: (context, fade, _) =>
+                      _buildingIconLayer(mapBuildings, fade),
                 ),
 
                 // Labels appear progressively as the user zooms in. They never
@@ -2159,56 +2265,9 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // around the building's point, so the name stays below the
                 // icon on screen.
                 ValueListenableBuilder<double>(
-                  valueListenable: _mapZoom,
-                  builder: (context, zoom, _) => MarkerLayer(
-                    rotate: true,
-                    markers: mapBuildings.map((building) {
-                      return Marker(
-                        point: building.coordinate,
-                        width: 120,
-                        height: 25,
-                        alignment: Alignment.topCenter,
-                        child: IgnorePointer(
-                          child: ExcludeSemantics(
-                            child: AnimatedOpacity(
-                              key: ValueKey('building-label-${building.id}'),
-                              opacity: buildingLabelOpacity(zoom),
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                              child: Transform.translate(
-                                // Keep the label below the entire icon, not
-                                // across its lower half at the map anchor.
-                                offset: const Offset(0, 40),
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.94),
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                    child: Text(
-                                      building.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.montserrat(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF0B351E),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                  valueListenable: _labelFade,
+                  builder: (context, fade, _) =>
+                      _buildingLabelLayer(mapBuildings, fade),
                 ),
 
                 if (_showsTransportOriginMarker)
