@@ -262,13 +262,13 @@ void main() {
             reason: 'ETA at $rotation°');
         final point = controller(tester)
             .camera
-            .latLngToScreenPoint(const LatLng(16.721, 121.691));
-        expect(tester.getCenter(pointer).dx, closeTo(point.x, 1),
+            .latLngToScreenOffset(const LatLng(16.721, 121.691));
+        expect(tester.getCenter(pointer).dx, closeTo(point.dx, 1),
             reason: 'ETA at $rotation°');
         expect(tester.getBottomLeft(pointer).dy,
-            inInclusiveRange(point.y - 12, point.y + 1),
+            inInclusiveRange(point.dy - 12, point.dy + 1),
             reason: 'ETA just above its point at $rotation°');
-        expect(tester.getBottomLeft(pill).dy, lessThan(point.y));
+        expect(tester.getBottomLeft(pill).dy, lessThan(point.dy));
       }
     });
   });

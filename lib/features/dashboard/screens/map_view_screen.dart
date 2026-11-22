@@ -111,6 +111,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
   Widget? _iconLayer;
   Object? _labelLayerKey;
   Widget? _labelLayer;
+  String? _tileProviderVersion;
+  TileProvider? _tileProvider;
   List<NavigationHistoryEntry> _recentHistory = [];
 
   NavigationUiState _navigationState = NavigationUiState.idle;
@@ -2168,6 +2170,18 @@ class _MapViewScreenState extends State<MapViewScreen> {
     );
   }
 
+  /// One provider per tile layer. A provider holds an HTTP client, and the
+  /// layer disposes only the provider it ends with, so a new one on every
+  /// rebuild would leak a client per GPS fix. A new pack version gets a new
+  /// layer (see its key) and so a new provider.
+  TileProvider _tileProviderFor(String version) {
+    if (version != _tileProviderVersion) {
+      _tileProviderVersion = version;
+      _tileProvider = OfflineAwareTileProvider();
+    }
+    return _tileProvider!;
+  }
+
   static String _idsOf(List<CampusBuilding> buildings) =>
       buildings.map((building) => building.id).join(',');
 
@@ -2176,6 +2190,8 @@ class _MapViewScreenState extends State<MapViewScreen> {
     final topPadding = MediaQuery.of(context).padding.top;
     final filteredBuildings = _getFilteredBuildings();
     final mapBuildings = _withRouteDestination(filteredBuildings);
+    final tileVersion =
+        OfflinePackService.instance.status.installedVersion ?? 'live';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F5),
@@ -2221,11 +2237,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 // one is downloaded. The key rebuilds the layer after a
                 // download so freshly cached tiles are picked up.
                 TileLayer(
-                  key: ValueKey(
-                      'tiles-${OfflinePackService.instance.status.installedVersion ?? 'live'}'),
+                  key: ValueKey('tiles-$tileVersion'),
                   urlTemplate: campusTileUrlTemplate,
                   userAgentPackageName: campusTileUserAgent,
-                  tileProvider: OfflineAwareTileProvider(),
+                  tileProvider: _tileProviderFor(tileVersion),
                 ),
 
                 _buildingPolygonLayer(mapBuildings),
