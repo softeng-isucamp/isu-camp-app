@@ -96,3 +96,22 @@ identifies itself with `campusDownloadUserAgent`. For wider deployment, point
 Offline mode needs a writable app directory, so it is offered on Android, iOS,
 Windows, macOS, and Linux. On the web build the screen reports it as available
 only in the installed app.
+
+### Android release build
+
+Build one APK per CPU type instead of one universal APK:
+
+```powershell
+flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=https://api.kumpas.live
+```
+
+| APK | Size |
+|---|---|
+| Universal (`flutter build apk`) | 58.3 MB |
+| `app-arm64-v8a-release.apk`: nearly all current phones | 21.2 MB |
+| `app-armeabi-v7a-release.apk`: older 32-bit phones | 18.8 MB |
+| `app-x86_64-release.apk`: emulators | 22.8 MB |
+
+Hand out the arm64 APK by default. For the Play Store, upload
+`flutter build appbundle` instead; Play then serves each phone only its own
+CPU's code.
